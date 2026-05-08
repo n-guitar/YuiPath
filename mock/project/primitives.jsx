@@ -1,0 +1,165 @@
+// Date utilities and shared primitives for ProjectWeb
+
+const MS_DAY = 86400000;
+const parseDate = (s) => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+const fmtDate = (d) => { const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,"0"); const day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; };
+const daysBetween = (a, b) => Math.round((parseDate(b) - parseDate(a)) / MS_DAY);
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const fmtJP = (s) => { const d = parseDate(s); return `${d.getMonth()+1}/${d.getDate()}`; };
+const fmtJPLong = (s) => { const d = parseDate(s); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; };
+const fmtMoney = (n) => "¥" + n.toLocaleString("ja-JP");
+
+// Avatar bubble
+function Avatar({ resource, size = 24, ring = false }) {
+  if (!resource) return null;
+  const initial = resource.name.charAt(0);
+  return (
+    <span
+      className="pw-avatar"
+      style={{
+        width: size, height: size, fontSize: Math.round(size * 0.45),
+        background: resource.color,
+        boxShadow: ring ? "0 0 0 2px var(--surface)" : "none",
+      }}
+      title={`${resource.name} · ${resource.role}`}
+    >{initial}</span>
+  );
+}
+
+function AvatarStack({ ids, max = 3, size = 22 }) {
+  const arr = ids.map(id => RESOURCES.find(r => r.id === id)).filter(Boolean);
+  const shown = arr.slice(0, max);
+  const overflow = arr.length - shown.length;
+  return (
+    <span className="pw-avatar-stack" style={{ "--size": size + "px" }}>
+      {shown.map((r,i) => <Avatar key={r.id} resource={r} size={size} ring />)}
+      {overflow > 0 && (
+        <span className="pw-avatar pw-avatar--more" style={{ width: size, height: size, fontSize: Math.round(size*0.42) }}>+{overflow}</span>
+      )}
+    </span>
+  );
+}
+
+// Primary + sub assignees: owner shown prominently, subs smaller next to it
+function PrimaryAvatar({ owner, subs = [], size = 22, showSubs = true, maxSubs = 2 }) {
+  const ownerR = RESOURCES.find(r => r.id === owner);
+  if (!ownerR) return null;
+  const subsR = (subs || []).map(id => RESOURCES.find(r => r.id === id)).filter(Boolean);
+  const shown = subsR.slice(0, maxSubs);
+  const rest = subsR.length - shown.length;
+  const subSize = Math.max(12, Math.round(size * 0.72));
+  return (
+    <span className="pw-passign" title={`主担当: ${ownerR.name}${subsR.length ? ` / 副担当: ${subsR.map(s=>s.name).join("、")}` : ""}`}>
+      <span className="pw-passign__owner">
+        <Avatar resource={ownerR} size={size} />
+        <span className="pw-passign__crown" aria-hidden="true" />
+      </span>
+      {showSubs && shown.length > 0 && (
+        <span className="pw-passign__subs">
+          {shown.map(s => <Avatar key={s.id} resource={s} size={subSize} />)}
+          {rest > 0 && (
+            <span className="pw-avatar pw-avatar--more" style={{ width: subSize, height: subSize, fontSize: Math.round(subSize*0.45) }}>+{rest}</span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function StatusPill({ status }) {
+  const map = {
+    "todo":         { label: "未着手", className: "pw-pill--todo" },
+    "in-progress":  { label: "進行中", className: "pw-pill--inprogress" },
+    "done":         { label: "完了",   className: "pw-pill--done" },
+    "blocked":      { label: "ブロック中", className: "pw-pill--blocked" },
+  };
+  const cfg = map[status] || map.todo;
+  return <span className={"pw-pill " + cfg.className}>{cfg.label}</span>;
+}
+
+function HealthDot({ health }) {
+  const map = {
+    "on-track":  { color: "#2A8C6E", label: "順調" },
+    "at-risk":   { color: "#C57F1A", label: "注意" },
+    "off-track": { color: "#DC4C3F", label: "遅延" },
+  };
+  const cfg = map[health];
+  return (
+    <span className="pw-health-dot">
+      <span className="pw-health-dot__dot" style={{ background: cfg.color }} />
+      <span>{cfg.label}</span>
+    </span>
+  );
+}
+
+// Tiny inline icons (lucide-style strokes)
+function Icon({ name, size = 16, className }) {
+  const paths = {
+    home:        <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
+    gantt:       <><path d="M3 5h10" /><path d="M7 10h12" /><path d="M5 15h9" /><path d="M9 20h11" /></>,
+    tree:        <><path d="M4 4h7v5H4z" /><path d="M13 11h7v5h-7z" /><path d="M13 18h7v3h-7z" /><path d="M7 9v3h6" /><path d="M7 12v7h6" /></>,
+    users:       <><circle cx="9" cy="8" r="3" /><path d="M3 20c1-3 3-5 6-5s5 2 6 5" /><circle cx="17" cy="9" r="2.5" /><path d="M14 20c.6-2 2-3 3.5-3s2.5.8 3.5 3" /></>,
+    folder:      <><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
+    settings:    <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.4-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
+    search:      <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
+    plus:        <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    chevronR:    <><path d="M9 6l6 6-6 6" /></>,
+    chevronD:    <><path d="M6 9l6 6 6-6" /></>,
+    chevronL:    <><path d="M15 6l-6 6 6 6" /></>,
+    close:       <><path d="M6 6l12 12" /><path d="M18 6L6 18" /></>,
+    sparkle:     <><path d="M12 3l1.8 4.7L18 9.5l-4.2 1.8L12 16l-1.8-4.7L6 9.5l4.2-1.8z" /><path d="M19 15l.8 2 2 .8-2 .8L19 21l-.8-2-2-.8 2-.8z" /></>,
+    flag:        <><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></>,
+    calendar:    <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M8 3v4" /><path d="M16 3v4" /></>,
+    filter:      <><path d="M4 5h16l-6 8v6l-4-2v-4z" /></>,
+    download:    <><path d="M12 4v12" /><path d="M7 11l5 5 5-5" /><path d="M4 20h16" /></>,
+    upload:      <><path d="M12 20V8" /><path d="M7 13l5-5 5 5" /><path d="M4 4h16" /></>,
+    bell:        <><path d="M6 8a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
+    sidebar:     <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
+    moreH:       <><circle cx="6" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="18" cy="12" r="1.4" /></>,
+    link:        <><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>,
+    bolt:        <><path d="M13 2L4 14h7l-1 8 9-12h-7z" /></>,
+    check:       <><path d="M5 12l4 4 10-10" /></>,
+    flagSm:      <><path d="M4 21V4" /><path d="M4 4h12l-2 3 2 3H4" /></>,
+    file:        <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></>,
+    table:       <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /><path d="M3 14h18" /><path d="M9 4v16" /></>,
+    trash:       <><path d="M4 7h16" /><path d="M9 7V4h6v3" /><path d="M6 7l1 13h10l1-13" /></>,
+    indent:      <><path d="M4 6h16" /><path d="M10 12h10" /><path d="M4 18h16" /><path d="M4 9l3 3-3 3" /></>,
+    outdent:     <><path d="M4 6h16" /><path d="M4 12h10" /><path d="M4 18h16" /><path d="M20 9l-3 3 3 3" /></>,
+    copy:        <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
+    insert:      <><path d="M12 4v16" /><path d="M4 12h16" /><circle cx="12" cy="12" r="9" opacity="0.4" /></>,
+  };
+  return (
+    <svg className={"pw-icon " + (className||"")} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      {paths[name] || null}
+    </svg>
+  );
+}
+
+// Mini progress bar
+function Progress({ value, height = 4, color }) {
+  return (
+    <span className="pw-progress" style={{ height }}>
+      <span className="pw-progress__fill" style={{ width: `${Math.round(value*100)}%`, background: color || "var(--accent)" }} />
+    </span>
+  );
+}
+
+// KPI card
+function KpiCard({ label, value, sub, intent, icon, children }) {
+  return (
+    <div className={"pw-kpi" + (intent ? " pw-kpi--" + intent : "")}>
+      <div className="pw-kpi__head">
+        <span className="pw-kpi__label">{label}</span>
+        {icon && <Icon name={icon} size={14} />}
+      </div>
+      <div className="pw-kpi__value">{value}</div>
+      {sub && <div className="pw-kpi__sub">{sub}</div>}
+      {children}
+    </div>
+  );
+}
+
+Object.assign(window, {
+  parseDate, fmtDate, daysBetween, addDays, fmtJP, fmtJPLong, fmtMoney, MS_DAY,
+  Avatar, AvatarStack, PrimaryAvatar, StatusPill, HealthDot, Icon, Progress, KpiCard,
+});
