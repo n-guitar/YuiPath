@@ -7,24 +7,54 @@ const ZOOM_PRESETS = {
   quarter: { dayPx: 2,  label: "四半期", majorUnit: "quarter", minorUnit: "month" },
 };
 
-function GanttScreen({ tweaks, onOpenTask, selectedId }) {
+function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
+  const tasks = useTasks();   // subscribed → re-renders on task mutations
+  useResources();
   const zoom = ZOOM_PRESETS[tweaks.ganttZoom] || ZOOM_PRESETS.week;
   const dayPx = zoom.dayPx;
+  const [cpHighlight, setCpHighlight] = React.useState(false);
+  const [ownerFilter, setOwnerFilter] = React.useState([]);
+  const [statusFilter, setStatusFilter] = React.useState([]);
 
   // Project span (pad +/-)
-  const allDates = TASKS.flatMap(t => [t.start, t.end]);
+  const allDates = tasks.flatMap(t => [t.start, t.end]);
   const min = allDates.reduce((a,b) => a < b ? a : b);
   const max = allDates.reduce((a,b) => a > b ? a : b);
   const startDate = parseDate(min); startDate.setDate(startDate.getDate() - 7);
   const endDate = parseDate(max); endDate.setDate(endDate.getDate() + 7);
   const totalDays = Math.round((endDate - startDate) / MS_DAY);
 
-  const today = parseDate("2026-06-12"); // pinned for repeatable demo
+  const today = parseDate(TODAY);
   const todayX = Math.round((today - startDate) / MS_DAY) * dayPx;
 
   const [collapsed, setCollapsed] = React.useState({});
   const isHidden = (t) => t.parent && collapsed[t.parent];
-  const visibleTasks = TASKS.filter(t => !isHidden(t));
+
+  // Apply owner + status filters. Phase rows are kept only if at least one
+  // of their visible leaves matches.
+  const visibleTasks = React.useMemo(() => {
+    const ownerSet = new Set(ownerFilter);
+    const statusSet = new Set(statusFilter);
+    const hasOwner = ownerSet.size > 0;
+    const hasStatus = statusSet.size > 0;
+    if (!hasOwner && !hasStatus) return tasks.filter(t => !isHidden(t));
+
+    const matchesLeaf = (t) => {
+      if (t.isPhase) return false;
+      if (hasOwner && !ownerSet.has(t.owner) && !(t.subs || []).some(s => ownerSet.has(s))) return false;
+      if (hasStatus && !statusSet.has(t.status)) return false;
+      return true;
+    };
+
+    const phaseHasMatch = {};
+    tasks.forEach(t => { if (matchesLeaf(t) && t.parent) phaseHasMatch[t.parent] = true; });
+
+    return tasks.filter(t => {
+      if (isHidden(t)) return false;
+      if (t.isPhase) return !!phaseHasMatch[t.id];
+      return matchesLeaf(t);
+    });
+  }, [tasks, collapsed, ownerFilter, statusFilter]);
 
   // Build a left list pane and right timeline. Synchronised vertical scroll via shared container.
   const xFor = (iso) => Math.round((parseDate(iso) - startDate) / MS_DAY) * dayPx;
@@ -35,17 +65,32 @@ function GanttScreen({ tweaks, onOpenTask, selectedId }) {
 
   return (
     <div className="pw-gantt">
-      <div className="pw-gantt__toolbar">
-        <div className="pw-tabs">
-          <button className="pw-tab pw-tab--active">ガント</button>
-          <button className="pw-tab">ボード</button>
-          <button className="pw-tab">テーブル</button>
-          <button className="pw-tab">カレンダー</button>
+      <div className="pw-view-toolbar pw-gantt__toolbar">
+        <div className="pw-view-toolbar__left">
+          <FilterDropdown
+            label="担当者"
+            icon="users"
+            options={(window.RESOURCES || []).map(r => ({
+              value: r.id, label: r.name, swatch: r.color,
+            }))}
+            selected={ownerFilter}
+            onChange={setOwnerFilter}/>
+          <FilterDropdown
+            label="ステータス"
+            icon="bolt"
+            options={STATUSES.map(s => ({
+              value: s.value, label: s.label, swatch: s.color,
+            }))}
+            selected={statusFilter}
+            onChange={setStatusFilter}/>
+          <button
+            className={"pw-btn pw-btn--ghost pw-btn--sm pw-btn--toggle" + (cpHighlight ? " is-on" : "")}
+            onClick={() => setCpHighlight(v => !v)}
+            title="クリティカルパスを強調表示">
+            <Icon name="bolt" size={14}/> CP
+          </button>
         </div>
-        <div className="pw-gantt__tools">
-          <button className="pw-btn pw-btn--ghost"><Icon name="filter" size={14}/> フィルター</button>
-          <button className="pw-btn pw-btn--ghost"><Icon name="bolt" size={14}/> クリティカルパス</button>
-          <span className="pw-divider-v" />
+        <div className="pw-view-toolbar__right">
           <div className="pw-zoom">
             {Object.entries(ZOOM_PRESETS).map(([k,v]) => (
               <button key={k}
@@ -53,8 +98,11 @@ function GanttScreen({ tweaks, onOpenTask, selectedId }) {
                 onClick={() => tweaks.setTweak("ganttZoom", k)}>{v.label}</button>
             ))}
           </div>
+          <button className="pw-icon-btn" title="エクスポート"><Icon name="download" size={16}/></button>
           <span className="pw-divider-v" />
-          <button className="pw-btn pw-btn--ghost"><Icon name="download" size={14}/></button>
+          <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
+            <Icon name="plus" size={14}/> 新規タスク
+          </button>
         </div>
       </div>
 
@@ -76,11 +124,24 @@ function GanttScreen({ tweaks, onOpenTask, selectedId }) {
       </div>
 
       <div className="pw-gantt__footer">
-        <span><Icon name="bolt" size={12}/> クリティカルパス: <strong>11 タスク / 124 日</strong></span>
-        <span>表示中: {visibleTasks.length} / {TASKS.length} タスク</span>
-        <span>進捗: <strong>42%</strong></span>
-        <span>SPI: <strong style={{color:"#C57F1A"}}>0.89</strong></span>
-        <span>CPI: <strong style={{color:"#C57F1A"}}>0.95</strong></span>
+        <div className="pw-gantt__legend">
+          {STATUSES.map(s => (
+            <span key={s.value} className="pw-gantt__legend-item" title={s.label}>
+              <span className="pw-gantt__legend-swatch" style={{ background: s.color }}/>
+              {s.short}
+            </span>
+          ))}
+          <span className="pw-gantt__legend-item pw-gantt__legend-item--cp" title="クリティカルパス">
+            <span className="pw-gantt__legend-swatch pw-gantt__legend-swatch--cp"/>
+            CP
+          </span>
+        </div>
+        <div className="pw-gantt__footer-stats">
+          <span>表示中: {visibleTasks.length} / {tasks.length}</span>
+          <span>進捗: <strong>42%</strong></span>
+          <span>SPI: <strong style={{color:"#C57F1A"}}>0.89</strong></span>
+          <span>CPI: <strong style={{color:"#C57F1A"}}>0.95</strong></span>
+        </div>
       </div>
     </div>
   );
@@ -298,15 +359,19 @@ function GanttTimeline({ tasks, startDate, totalDays, dayPx, zoom, xFor, wFor, t
                   </div>
                 );
               }
-              const cls = "pw-bar" + (t.critical ? " pw-bar--critical" : "") + (selectedId === t.id ? " pw-bar--selected" : "");
+              const meta = STATUS_BY_VALUE[t.status] || STATUSES[0];
+              const cls = "pw-bar pw-bar--status"
+                + (t.critical ? " pw-bar--critical" : "")
+                + (selectedId === t.id ? " pw-bar--selected" : "")
+                + (t.status === "blocked" ? " pw-bar--blocked" : "");
               return (
                 <div key={t.id}
                   className={cls}
-                  style={{ left: x, top: y, width: w, height: h }}
+                  style={{ left: x, top: y, width: w, height: h, "--bar-color": meta.color }}
                   onClick={() => onOpenTask(t.id)}
                   onMouseEnter={() => setHoverId && setHoverId(t.id)}
                   onMouseLeave={() => setHoverId && setHoverId(null)}
-                  title={`${t.name}\n${t.start} → ${t.end} (${t.duration}d)`}>
+                  title={`${t.name}\n${meta.label} · ${t.start} → ${t.end} (${t.duration}d)`}>
                   <div className="pw-bar__fill" style={{ width: `${t.progress*100}%` }} />
                   {w > 80 && (
                     <div className="pw-bar__inner">

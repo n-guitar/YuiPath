@@ -4,13 +4,14 @@ const NAV = [
   { id: "dashboard", label: "ダッシュボード", icon: "home" },
   { id: "table",     label: "テーブル",       icon: "table" },
   { id: "gantt",     label: "ガントチャート",  icon: "gantt" },
-  { id: "wbs",       label: "WBS",          icon: "tree" },
   { id: "resources", label: "リソース",       icon: "users" },
 ];
 
 function App() {
-  // Subscribe at the root so any task edit re-renders the whole tree (children read window.TASKS).
+  // Subscribe at the root so any task / resource / project edit re-renders the tree.
   useTasks();
+  useResources();
+  useProjects();
 
   const [t, setTweak] = useTweaks(/*EDITMODE-BEGIN*/{
     "primaryColor": "#3D6BE0",
@@ -33,14 +34,241 @@ function App() {
 
   const [view, setView] = React.useState("table");
   const [openTaskId, setOpenTaskId] = React.useState(null);
-  const [modal, setModal] = React.useState(null); // { mode: 'create'|'edit', taskId? }
+  // When set, the TaskDrawer scrolls this section into view on mount —
+  // used by the activity feed so a "comment added" entry lands on the comment.
+  const [openTaskScrollTo, setOpenTaskScrollTo] = React.useState(null);
+  const [openTaskCommentId, setOpenTaskCommentId] = React.useState(null);
+  const [openResourceId, setOpenResourceId] = React.useState(null);
+  const [openProjectId, setOpenProjectId] = React.useState(null);
   const [showProjectsList, setShowProjectsList] = React.useState(false);
+  // Generic confirm dialog state — used for all destructive operations.
+  const [confirm, setConfirm] = React.useState(null);
+  const askConfirm = (params) => setConfirm(params);
+  const closeConfirm = () => setConfirm(null);
 
-  const openTask = (id) => setOpenTaskId(id);
-  const closeTask = () => setOpenTaskId(null);
-  const openCreate = () => setModal({ mode: "create" });
-  const openEdit = (id) => setModal({ mode: "edit", taskId: id });
-  const closeModal = () => setModal(null);
+  const openTask = (id, scrollTo = null, commentId = null) => {
+    setOpenTaskScrollTo(scrollTo);
+    setOpenTaskCommentId(commentId);
+    setOpenTaskId(id);
+  };
+  const closeTask = () => {
+    // Auto-cleanup: a freshly created task left with no name is treated as
+    // "cancelled" (closing the drawer == discarding). IDs from openCreate start with "n".
+    setOpenTaskId(id => {
+      if (id && id.startsWith("n")) {
+        const t = (window.TASKS || []).find(x => x.id === id);
+        if (t && !t.name?.trim()) setTasks(prev => prev.filter(x => x.id !== id));
+      }
+      return null;
+    });
+  };
+
+  // 新規タスク: append an empty task to the last phase, then open the drawer.
+  // The drawer becomes the create UI — no modal, edits auto-save.
+  const openCreate = () => {
+    const newId = "n" + Math.random().toString(36).slice(2, 7);
+    setTasks(prev => {
+      const lastPhase = [...prev].reverse().find(x => x.isPhase);
+      const today = PROJECT.startDate;
+      const node = {
+        id: newId, name: "", parent: lastPhase?.id,
+        start: today, end: today, duration: 1, progress: 0,
+        owner: undefined, subs: [], depth: 1,
+        predecessors: [], critical: false, status: "todo",
+        description: "",
+      };
+      return [...prev, node];
+    });
+    setOpenTaskId(newId);
+  };
+
+  const deleteTask = (id) => {
+    // Phase deletion cascades to its children. Also clean up `predecessors`
+    // references so dangling task ids don't linger.
+    setTasks(prev => {
+      const removeIds = new Set([id]);
+      prev.forEach(t => { if (t.parent === id) removeIds.add(t.id); });
+      return prev
+        .filter(t => !removeIds.has(t.id))
+        .map(t => {
+          if (!t.predecessors?.some(p => removeIds.has(p))) return t;
+          return { ...t, predecessors: t.predecessors.filter(p => !removeIds.has(p)) };
+        });
+    });
+    closeTask();
+  };
+
+  // Resource open/close — same auto-cleanup pattern as tasks
+  const openResource = (id) => setOpenResourceId(id);
+  const closeResource = () => {
+    setOpenResourceId(id => {
+      if (id && id.startsWith("nr")) {
+        const r = (window.RESOURCES || []).find(x => x.id === id);
+        if (r && !r.name?.trim()) setResources(prev => prev.filter(x => x.id !== id));
+      }
+      return null;
+    });
+  };
+  const openCreateResource = () => {
+    const newId = "nr" + Math.random().toString(36).slice(2, 7);
+    setResources(prev => {
+      const usedColors = new Set(prev.map(r => r.color));
+      const color = RESOURCE_COLORS.find(c => !usedColors.has(c)) || RESOURCE_COLORS[0];
+      return [...prev, { id: newId, name: "", enName: "", role: "", color, capacity: 1.0, allocation: 0 }];
+    });
+    setOpenResourceId(newId);
+  };
+  const deleteResource = (id) => {
+    // Also unassign from any task currently referencing this resource.
+    setTasks(prev => prev.map(t => {
+      const next = { ...t };
+      if (t.owner === id) next.owner = undefined;
+      if ((t.subs || []).includes(id)) next.subs = t.subs.filter(s => s !== id);
+      return next;
+    }));
+    setResources(prev => prev.filter(x => x.id !== id));
+    closeResource();
+  };
+
+  // ─── Project drawer (create / edit) ───
+  const openProject = (id) => setOpenProjectId(id);
+  const closeProject = () => {
+    setOpenProjectId(id => {
+      // Auto-cleanup new empty projects (id starts with "np")
+      if (id && id.startsWith("np")) {
+        const p = (window.PROJECTS || []).find(x => x.id === id);
+        if (p && !p.name?.trim()) {
+          setProjects(prev => prev.filter(x => x.id !== id));
+        }
+      }
+      return null;
+    });
+  };
+  const openCreateProject = () => {
+    const newId = "np" + Math.random().toString(36).slice(2, 7);
+    setProjects(prev => [
+      ...prev,
+      {
+        id: newId, name: "", client: "", description: "",
+        startDate: TODAY, endDate: TODAY, baselineEnd: TODAY,
+        progress: 0, health: "on-track", members: 0,
+      },
+    ]);
+    setOpenProjectId(newId);
+  };
+  const handleDeleteProject = (id) => {
+    deleteProject(id);
+    closeProject();
+  };
+  const handleSwitchProject = (id) => {
+    switchToProject(id);
+    setShowProjectsList(false);
+  };
+
+  // ─── Confirmation wrappers for destructive actions ───
+  // These are passed to drawers/menus instead of the raw delete functions.
+  // Each surfaces blast radius (cascade impact) so the user can decide knowingly.
+
+  const askDeleteTask = (id) => {
+    const t = (window.TASKS || []).find(x => x.id === id);
+    if (!t) return;
+    const successors = (window.TASKS || []).filter(x => (x.predecessors || []).includes(id));
+    const children = t.isPhase ? (window.TASKS || []).filter(x => x.parent === id) : [];
+    askConfirm({
+      title: t.isPhase ? "フェーズを削除しますか？" : "タスクを削除しますか？",
+      body: (
+        <>
+          <p>「<strong>{t.name || "(名称未設定)"}</strong>」を削除します。</p>
+          {children.length > 0 && (
+            <p className="pw-confirm__warn">
+              ⚠️ 配下の子タスク <strong>{children.length} 件</strong> も同時に削除されます。
+            </p>
+          )}
+          {successors.length > 0 && (
+            <p className="pw-confirm__warn">
+              このタスクを先行とする <strong>{successors.length} 件</strong> のタスクから先行リンクが切れます。
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: t.isPhase ? "フェーズごと削除" : "削除",
+      destructive: true,
+      onConfirm: () => { deleteTask(id); closeConfirm(); },
+    });
+  };
+
+  const askDeleteResource = (id) => {
+    const r = (window.RESOURCES || []).find(x => x.id === id);
+    if (!r) return;
+    const owned = (window.TASKS || []).filter(t => t.owner === id);
+    const subs = (window.TASKS || []).filter(t => (t.subs || []).includes(id));
+    const total = owned.length + subs.length;
+    askConfirm({
+      title: "メンバーを削除しますか？",
+      body: (
+        <>
+          <p>「<strong>{r.name || "(名称未設定)"}</strong>」を削除します。</p>
+          {total === 0 ? (
+            <p>アサイン中のタスクはありません。</p>
+          ) : (
+            <p className="pw-confirm__warn">
+              ⚠️ 主担当 <strong>{owned.length} 件</strong> ／ 副担当 <strong>{subs.length} 件</strong>
+              のタスクから自動的にアンアサインされます。
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: "削除",
+      destructive: true,
+      onConfirm: () => { deleteResource(id); closeConfirm(); },
+    });
+  };
+
+  const askDeleteComment = (id) => {
+    const c = (window.COMMENTS || []).find(x => x.id === id);
+    if (!c) return;
+    askConfirm({
+      title: "コメントを削除しますか？",
+      body: (
+        <>
+          <p>この操作は取り消せません。</p>
+          <p className="pw-confirm__warn">
+            「{c.body.length > 60 ? c.body.slice(0, 60) + "…" : c.body}」
+          </p>
+        </>
+      ),
+      confirmLabel: "削除",
+      destructive: true,
+      onConfirm: () => { deleteComment(id); closeConfirm(); },
+    });
+  };
+
+  const askDeleteProject = (id) => {
+    const p = (window.PROJECTS || []).find(x => x.id === id);
+    if (!p) return;
+    const remaining = (window.PROJECTS || []).filter(x => x.id !== id).length;
+    askConfirm({
+      title: "プロジェクトを削除しますか？",
+      body: (
+        <>
+          <p>「<strong>{p.name || "(名称未設定)"}</strong>」を削除します。</p>
+          {p.current && remaining > 0 && (
+            <p className="pw-confirm__warn">
+              ⚠️ 現在表示中のプロジェクトです。削除後は別のプロジェクトに自動切替されます。
+            </p>
+          )}
+          {remaining === 0 && (
+            <p className="pw-confirm__warn">
+              ⚠️ これが最後のプロジェクトです。削除後はプロジェクトが1つも無い状態になります。
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: "プロジェクトを削除",
+      destructive: true,
+      onConfirm: () => { handleDeleteProject(id); closeConfirm(); },
+    });
+  };
 
   return (
     <div className={"pw-app" + (t.sidebarCollapsed ? " pw-app--collapsed" : "")}
@@ -60,34 +288,47 @@ function App() {
           onToggleSidebar={() => setTweak("sidebarCollapsed", !t.sidebarCollapsed)}
           onProjectsClick={() => setShowProjectsList(true)}
           onProjectClick={() => setShowProjectsList(false)}
-          onCreateTask={openCreate}
         />
         <div className={"pw-main__body" + (!showProjectsList && view === "dashboard" ? " pw-main__body--dash" : "")} data-screen-label={
           showProjectsList ? "Projects" :
           view === "dashboard" ? "Dashboard" :
           view === "gantt" ? "Gantt" :
-          view === "wbs" ? "WBS" :
           view === "resources" ? "Resources" : view
         }>
-          {showProjectsList && <ProjectsListScreen />}
-          {!showProjectsList && view === "dashboard" && <DashboardScreen onOpenTask={openTask}/>}
-          {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate}/>}
-          {!showProjectsList && view === "gantt" &&     <GanttScreen tweaks={tweaks} onOpenTask={openTask} selectedId={openTaskId}/>}
-          {!showProjectsList && view === "wbs" &&       <WbsScreen onOpenTask={openTask}/>}
-          {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask}/>}
+          {showProjectsList && (
+            <ProjectsListScreen
+              onSwitchProject={handleSwitchProject}
+              onEditProject={openProject}
+              onCreateProject={openCreateProject}/>
+          )}
+          {!showProjectsList && view === "dashboard" && <DashboardScreen onOpenTask={openTask} onOpenResource={openResource}/>}
+          {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate} askDeleteTask={askDeleteTask}/>}
+          {!showProjectsList && view === "gantt" &&     <GanttScreen tweaks={tweaks} onOpenTask={openTask} onCreateTask={openCreate} selectedId={openTaskId}/>}
+          {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask} onOpenResource={openResource} onCreateResource={openCreateResource}/>}
         </div>
       </main>
 
-      {openTaskId && <TaskDrawer taskId={openTaskId} onClose={closeTask} onEdit={() => { openEdit(openTaskId); closeTask(); }} />}
-
-      {modal && (
-        <TaskModal
-          mode={modal.mode}
-          task={modal.taskId ? TASKS.find(x => x.id === modal.taskId) : null}
-          onClose={closeModal}
-          onOpenTask={(id) => { closeModal(); openTask(id); }}
-        />
+      {openTaskId && (
+        <TaskDrawer
+          taskId={openTaskId}
+          scrollTo={openTaskScrollTo}
+          scrollToCommentId={openTaskCommentId}
+          onClose={closeTask}
+          onDelete={askDeleteTask}
+          askDeleteComment={askDeleteComment}/>
       )}
+      {openResourceId && (
+        <ResourceDrawer resourceId={openResourceId} onClose={closeResource} onDelete={askDeleteResource}
+          onOpenTask={(id) => { closeResource(); openTask(id); }}/>
+      )}
+      {openProjectId && (
+        <ProjectDrawer projectId={openProjectId}
+          onClose={closeProject}
+          onDelete={askDeleteProject}
+          onSwitchTo={(id) => { closeProject(); handleSwitchProject(id); }}/>
+      )}
+
+      {confirm && <ConfirmDialog {...confirm} onCancel={closeConfirm}/>}
 
       <ProjectWebTweaks t={t} setTweak={setTweak}/>
     </div>
@@ -99,7 +340,14 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
   return (
     <aside className="pw-sidebar">
       <div className="pw-sidebar__brand">
-        <div className="pw-brand">
+        {/* When collapsed, the brand mark itself becomes the toggle (no
+            separate button — there's not enough room in 56px). When
+            expanded, the toggle stays at the right edge. */}
+        <button
+          type="button"
+          className="pw-brand"
+          onClick={collapsed ? onToggle : undefined}
+          title={collapsed ? "サイドバーを開く" : undefined}>
           <div className="pw-brand__mark">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
               <rect x="3" y="6"  width="11" height="3" rx="1.5" fill="currentColor"/>
@@ -113,10 +361,12 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
               <div className="pw-brand__sub">Acme Inc.</div>
             </div>
           )}
-        </div>
-        <button className="pw-icon-btn pw-sidebar__toggle" onClick={onToggle} title="サイドバーを切り替え">
-          <Icon name="sidebar" size={16}/>
         </button>
+        {!collapsed && (
+          <button className="pw-icon-btn pw-sidebar__toggle" onClick={onToggle} title="サイドバーを閉じる">
+            <Icon name="sidebar" size={16}/>
+          </button>
+        )}
       </div>
 
       <button className="pw-project-switch" onClick={onShowProjectsList}>
@@ -143,36 +393,6 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
         ))}
       </nav>
 
-      {!collapsed && (
-        <div className="pw-sidebar__section">
-          <div className="pw-sidebar__section-head">フェーズ</div>
-          <div className="pw-sidebar__phases">
-            {TASKS.filter(t => t.isPhase).map((p, i) => (
-              <button key={p.id} className="pw-sidebar__phase">
-                <span className="pw-sidebar__phase-num">{i+1}</span>
-                <span className="pw-sidebar__phase-name">{p.name}</span>
-                <span className="pw-sidebar__phase-pct">{Math.round(p.progress*100)}%</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!collapsed && (
-        <div className="pw-sidebar__section">
-          <div className="pw-sidebar__section-head">チーム</div>
-          <div className="pw-sidebar__team">
-            {RESOURCES.map(r => (
-              <div key={r.id} className="pw-sidebar__member">
-                <Avatar resource={r} size={20}/>
-                <span className="pw-sidebar__member-name">{r.name}</span>
-                {r.allocation > 1.0 && <span className="pw-sidebar__over">!</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="pw-sidebar__foot">
         <button className="pw-nav__item">
           <Icon name="settings" size={16}/>
@@ -193,13 +413,12 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
 }
 
 // ─────────── Topbar ───────────
-function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick, onCreateTask }) {
+function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick }) {
   const titles = {
     "projects":  "プロジェクト",
     "dashboard": "ダッシュボード",
     "table":     "テーブル",
     "gantt":     "ガントチャート",
-    "wbs":       "WBS",
     "resources": "リソース管理",
   };
   return (
@@ -220,9 +439,12 @@ function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick, onCrea
       <div className="pw-topbar__right">
         <div className="pw-search">
           <Icon name="search" size={14}/>
-          <input className="pw-search__input" placeholder="タスク・メンバーを検索…"/>
+          <input className="pw-search__input" placeholder="プロジェクト全体を検索…"/>
           <kbd className="pw-kbd">⌘K</kbd>
         </div>
+        <button className="pw-icon-btn" title="プロジェクトを共有">
+          <Icon name="upload" size={16}/>
+        </button>
         <button className="pw-icon-btn pw-icon-btn--badge" title="通知">
           <Icon name="bell" size={16}/>
           <span className="pw-badge"/>
@@ -231,12 +453,6 @@ function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick, onCrea
         <div className="pw-topbar__avatars">
           <AvatarStack ids={RESOURCES.slice(0,4).map(r=>r.id)} size={26}/>
         </div>
-        <button className="pw-btn pw-btn--ghost"><Icon name="upload" size={14}/> 共有</button>
-        {view !== "projects" && (
-          <button className="pw-btn pw-btn--primary" onClick={onCreateTask}>
-            <Icon name="plus" size={14}/> 新規タスク
-          </button>
-        )}
       </div>
     </header>
   );

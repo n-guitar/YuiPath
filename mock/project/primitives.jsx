@@ -9,6 +9,21 @@ const fmtJP = (s) => { const d = parseDate(s); return `${d.getMonth()+1}/${d.get
 const fmtJPLong = (s) => { const d = parseDate(s); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; };
 const fmtMoney = (n) => "¥" + n.toLocaleString("ja-JP");
 
+// Relative time for comments / activity. Pinned to NOW for repeatable mock.
+function fmtRelativeTime(iso, nowIso) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  const now = new Date(nowIso || (typeof NOW !== "undefined" ? NOW : new Date().toISOString())).getTime();
+  const diffSec = Math.max(0, (now - t) / 1000);
+  if (diffSec < 60) return "たった今";
+  if (diffSec < 3600) return `${Math.floor(diffSec/60)}分前`;
+  if (diffSec < 86400) return `${Math.floor(diffSec/3600)}時間前`;
+  if (diffSec < 86400*7) return `${Math.floor(diffSec/86400)}日前`;
+  // For older entries, fall back to absolute date
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+}
+
 // Avatar bubble
 function Avatar({ resource, size = 24, ring = false }) {
   if (!resource) return null;
@@ -66,15 +81,14 @@ function PrimaryAvatar({ owner, subs = [], size = 22, showSubs = true, maxSubs =
   );
 }
 
-function StatusPill({ status }) {
-  const map = {
-    "todo":         { label: "未着手", className: "pw-pill--todo" },
-    "in-progress":  { label: "進行中", className: "pw-pill--inprogress" },
-    "done":         { label: "完了",   className: "pw-pill--done" },
-    "blocked":      { label: "ブロック中", className: "pw-pill--blocked" },
-  };
-  const cfg = map[status] || map.todo;
-  return <span className={"pw-pill " + cfg.className}>{cfg.label}</span>;
+function StatusPill({ status, compact }) {
+  const s = STATUS_BY_VALUE[status] || STATUSES[0];
+  return (
+    <span className="pw-pill pw-pill--status-chip" style={{ "--pill-color": s.color }}>
+      <span className="pw-pill__dot" style={{ background: s.color }}/>
+      {compact ? s.short : s.label}
+    </span>
+  );
 }
 
 function HealthDot({ health }) {
@@ -97,8 +111,7 @@ function Icon({ name, size = 16, className }) {
   const paths = {
     home:        <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
     gantt:       <><path d="M3 5h10" /><path d="M7 10h12" /><path d="M5 15h9" /><path d="M9 20h11" /></>,
-    tree:        <><path d="M4 4h7v5H4z" /><path d="M13 11h7v5h-7z" /><path d="M13 18h7v3h-7z" /><path d="M7 9v3h6" /><path d="M7 12v7h6" /></>,
-    users:       <><circle cx="9" cy="8" r="3" /><path d="M3 20c1-3 3-5 6-5s5 2 6 5" /><circle cx="17" cy="9" r="2.5" /><path d="M14 20c.6-2 2-3 3.5-3s2.5.8 3.5 3" /></>,
+    users:<><circle cx="9" cy="8" r="3" /><path d="M3 20c1-3 3-5 6-5s5 2 6 5" /><circle cx="17" cy="9" r="2.5" /><path d="M14 20c.6-2 2-3 3.5-3s2.5.8 3.5 3" /></>,
     folder:      <><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
     settings:    <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.4-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
     search:      <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
@@ -127,6 +140,7 @@ function Icon({ name, size = 16, className }) {
     outdent:     <><path d="M4 6h16" /><path d="M4 12h10" /><path d="M4 18h16" /><path d="M20 9l-3 3 3 3" /></>,
     copy:        <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
     insert:      <><path d="M12 4v16" /><path d="M4 12h16" /><circle cx="12" cy="12" r="9" opacity="0.4" /></>,
+    panelR:      <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /><path d="M18 9l2 3-2 3" /></>,
   };
   return (
     <svg className={"pw-icon " + (className||"")} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -144,22 +158,78 @@ function Progress({ value, height = 4, color }) {
   );
 }
 
-// KPI card
-function KpiCard({ label, value, sub, intent, icon, children }) {
+// ─────────── FilterDropdown ───────────
+// Generic multi-select filter button. `selected` is an array; `options` is
+// `[{ value, label, swatch?, icon? }]`. The trigger shows a count badge when
+// any options are selected, and the popover supports a "解除" clear action.
+function FilterDropdown({ label, icon, options, selected, onChange, placeholder = "すべて" }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const toggle = (v) => {
+    onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
+  };
+  const clear = () => onChange([]);
+
+  const hasFilter = selected.length > 0;
+  const summary = !hasFilter ? placeholder
+    : selected.length === 1 ? (options.find(o => o.value === selected[0])?.label ?? "1件")
+    : `${selected.length}件`;
+
   return (
-    <div className={"pw-kpi" + (intent ? " pw-kpi--" + intent : "")}>
-      <div className="pw-kpi__head">
-        <span className="pw-kpi__label">{label}</span>
-        {icon && <Icon name={icon} size={14} />}
-      </div>
-      <div className="pw-kpi__value">{value}</div>
-      {sub && <div className="pw-kpi__sub">{sub}</div>}
-      {children}
+    <div className="pw-filter" ref={ref}>
+      <button
+        className={"pw-btn pw-btn--ghost pw-btn--sm pw-filter__trigger" + (hasFilter ? " is-active" : "")}
+        onClick={() => setOpen(o => !o)}>
+        {icon && <Icon name={icon} size={14}/>}
+        <span className="pw-filter__label">{label}</span>
+        <span className="pw-filter__summary">{summary}</span>
+        <Icon name="chevronD" size={10}/>
+      </button>
+      {open && (
+        <div className="pw-filter__menu">
+          {hasFilter && (
+            <button className="pw-filter__clear" onClick={clear}>
+              <Icon name="close" size={11}/> 解除
+            </button>
+          )}
+          <div className="pw-filter__list">
+            {options.map(opt => {
+              const on = selected.includes(opt.value);
+              return (
+                <button key={opt.value}
+                  type="button"
+                  className={"pw-filter__item" + (on ? " is-selected" : "")}
+                  onClick={() => toggle(opt.value)}>
+                  <span className={"pw-checkbox" + (on ? " is-on" : "")}>
+                    {on && <Icon name="check" size={9}/>}
+                  </span>
+                  {opt.swatch && <span className="pw-filter__swatch" style={{ background: opt.swatch }}/>}
+                  {opt.avatar}
+                  <span className="pw-filter__item-label">{opt.label}</span>
+                </button>
+              );
+            })}
+            {options.length === 0 && (
+              <div className="pw-filter__empty">候補がありません</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 Object.assign(window, {
-  parseDate, fmtDate, daysBetween, addDays, fmtJP, fmtJPLong, fmtMoney, MS_DAY,
-  Avatar, AvatarStack, PrimaryAvatar, StatusPill, HealthDot, Icon, Progress, KpiCard,
+  parseDate, fmtDate, daysBetween, addDays, fmtJP, fmtJPLong, fmtMoney, fmtRelativeTime, MS_DAY,
+  Avatar, AvatarStack, PrimaryAvatar, StatusPill, HealthDot, Icon, Progress, FilterDropdown,
 });

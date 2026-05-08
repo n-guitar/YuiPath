@@ -104,24 +104,25 @@ function TaskModal({ mode, task, onClose, onOpenTask }) {
         {/* Body — two-column form */}
         <div className="pw-modal__body">
           <div className="pw-form">
-            <Field label="ステータス">
+            <Field label="ステータス" hint="ステータスを選ぶと進捗が連動します（停滞は現在の進捗を維持）">
               <div className="pw-status-radio">
-                {[
-                  { v: "todo",        label: "未着手", cls: "pw-pill--todo" },
-                  { v: "in-progress", label: "進行中", cls: "pw-pill--inprogress" },
-                  { v: "done",        label: "完了",   cls: "pw-pill--done" },
-                  { v: "blocked",     label: "ブロック", cls: "pw-pill--blocked" },
-                ].map(s => (
-                  <button key={s.v}
-                    className={"pw-pill " + s.cls + (form.status === s.v ? " is-active" : "")}
-                    onClick={() => set("status", s.v)}>
+                {STATUSES.map(s => (
+                  <button key={s.value}
+                    className={"pw-pill pw-pill--status" + (form.status === s.value ? " is-active" : "")}
+                    style={{ "--pill-color": s.color }}
+                    onClick={() => {
+                      const next = { ...form, status: s.value };
+                      if (s.progress != null) next.progress = s.progress;
+                      setForm(next);
+                    }}>
+                    <span className="pw-pill__dot" style={{ background: s.color }}/>
                     {s.label}
                   </button>
                 ))}
               </div>
             </Field>
 
-            <Field label="進捗">
+            <Field label="進捗" hint="ステータスから自動算出。微調整したい場合のみスライダーで上書き">
               <div className="pw-progress-edit">
                 <input type="range" min="0" max="100" step="5"
                   value={Math.round(form.progress * 100)}

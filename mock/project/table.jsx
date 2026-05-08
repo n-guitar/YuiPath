@@ -12,31 +12,74 @@
 //   - Row drag handle on hover for reorder
 
 const TABLE_COLUMNS = [
-  { key: "name",         label: "タスク名",      width: 320, kind: "text",     sticky: true  },
-  { key: "status",       label: "ステータス",    width: 110, kind: "status"   },
+  { key: "name",         label: "タスク名",      width: 280, kind: "text",     sticky: true  },
+  { key: "description",  label: "説明",           width: 220, kind: "longtext" },
+  { key: "status",       label: "ステータス",    width: 130, kind: "status"   },
   { key: "owner",        label: "主担当",         width: 130, kind: "owner"    },
   { key: "subs",         label: "副担当",         width: 130, kind: "subs"     },
   { key: "start",        label: "開始日",         width: 110, kind: "date"     },
   { key: "end",          label: "終了日",         width: 110, kind: "date"     },
   { key: "duration",     label: "工数",           width: 70,  kind: "number", suffix: "日" },
-  { key: "progress",     label: "進捗",           width: 100, kind: "progress" },
-  { key: "predecessors", label: "先行",           width: 110, kind: "deps"     },
+  { key: "predecessors", label: "先行",           width: 180, kind: "deps"     },
   { key: "critical",     label: "CP",             width: 50,  kind: "flag"     },
 ];
 
-function TableScreen({ onOpenTask, onCreateTask }) {
+// Cell editability rules. Phases: only name/description/start/end editable.
+const PHASE_EDITABLE = ["name", "description", "start", "end"];
+
+function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
   const tasks = useTasks();
+  useResources();   // re-render owner filter options when resources change
   const [focus, setFocus] = React.useState({ row: 0, col: 0 });
   const [editing, setEditing] = React.useState(null);     // { row, col, draft }
   const [contextMenu, setContextMenu] = React.useState(null); // { x, y, taskId }
   const [filterPhase, setFilterPhase] = React.useState("all");
   const [search, setSearch] = React.useState("");
+  const [ownerFilter, setOwnerFilter] = React.useState([]);   // resourceIds (multi-select)
+  const [statusFilter, setStatusFilter] = React.useState([]); // status values (multi-select)
   const [savedFlash, setSavedFlash] = React.useState(0);
+  const [colWidths, setColWidths] = React.useState(() => TABLE_COLUMNS.map(c => c.width));
+  const [resizing, setResizing] = React.useState(null);   // { ci, startX, startW }
+
+  // Column resize — drag from header right edge. Min 50px.
+  React.useEffect(() => {
+    if (!resizing) return;
+    const onMove = (e) => {
+      const dx = e.clientX - resizing.startX;
+      const next = Math.max(50, resizing.startW + dx);
+      setColWidths(ws => ws.map((w, i) => i === resizing.ci ? next : w));
+    };
+    const onUp = () => setResizing(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [resizing]);
+
+  const startResize = (ci, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing({ ci, startX: e.clientX, startW: colWidths[ci] });
+  };
+  const autoFitCol = (ci) => {
+    setColWidths(ws => ws.map((w, i) => i === ci ? TABLE_COLUMNS[ci].width : w));
+  };
 
   // Display rows = filter + (always include phase header rows when their leaves match)
   const displayed = React.useMemo(() => {
-    if (filterPhase === "all" && !search) return tasks;
     const q = search.toLowerCase();
+    const ownerSet = new Set(ownerFilter);
+    const statusSet = new Set(statusFilter);
+    const hasOwner = ownerSet.size > 0;
+    const hasStatus = statusSet.size > 0;
+    if (filterPhase === "all" && !q && !hasOwner && !hasStatus) return tasks;
+
     const rowsByPhase = {};
     tasks.forEach(t => {
       if (t.isPhase) rowsByPhase[t.id] = { phase: t, leaves: [] };
@@ -45,7 +88,13 @@ function TableScreen({ onOpenTask, onCreateTask }) {
       if (t.isPhase) return;
       const matchesPhase = filterPhase === "all" || t.parent === filterPhase;
       const matchesSearch = !q || t.name.toLowerCase().includes(q);
-      if (matchesPhase && matchesSearch) rowsByPhase[t.parent]?.leaves.push(t);
+      const matchesOwner = !hasOwner
+        || ownerSet.has(t.owner)
+        || (t.subs || []).some(s => ownerSet.has(s));
+      const matchesStatus = !hasStatus || statusSet.has(t.status);
+      if (matchesPhase && matchesSearch && matchesOwner && matchesStatus) {
+        rowsByPhase[t.parent]?.leaves.push(t);
+      }
     });
     const out = [];
     tasks.forEach(t => {
@@ -55,7 +104,7 @@ function TableScreen({ onOpenTask, onCreateTask }) {
       }
     });
     return out;
-  }, [tasks, filterPhase, search]);
+  }, [tasks, filterPhase, search, ownerFilter, statusFilter]);
 
   const flashSaved = () => {
     setSavedFlash(Date.now());
@@ -75,7 +124,7 @@ function TableScreen({ onOpenTask, onCreateTask }) {
       // Skip non-applicable cells on phase rows when moving horizontally
       const phaseRow = displayed[r]?.isPhase;
       const col = TABLE_COLUMNS[c];
-      if (phaseRow && !["name", "start", "end", "progress"].includes(col.key)) {
+      if (phaseRow && !PHASE_EDITABLE.includes(col.key)) {
         if (dc !== 0) return { row: r, col: c }; // allow but cell is read-only
       }
       return { row: r, col: c };
@@ -86,7 +135,7 @@ function TableScreen({ onOpenTask, onCreateTask }) {
     const task = displayed[row];
     if (!task) return;
     const colDef = TABLE_COLUMNS[col];
-    if (task.isPhase && !["name", "start", "end"].includes(colDef.key)) return; // phases: limited edit
+    if (task.isPhase && !PHASE_EDITABLE.includes(colDef.key)) return; // phases: limited edit
     if (colDef.kind === "flag") { commit(task.id, { critical: !task.critical }); return; }
     setEditing({ row, col, draft: initial !== undefined ? initial : task[colDef.key] });
   };
@@ -108,9 +157,14 @@ function TableScreen({ onOpenTask, onCreateTask }) {
       if (next.start && next.end) {
         patch.duration = daysBetween(next.start, next.end);
       }
-    } else if (colDef.kind === "progress") {
-      const n = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
-      patch.progress = n / 100;
+    } else if (colDef.kind === "status") {
+      patch.status = val;
+      // Status drives progress for leaf tasks. Phases keep their aggregate
+      // progress (computed elsewhere) and `blocked` preserves current progress.
+      if (!task.isPhase) {
+        const meta = STATUS_BY_VALUE[val];
+        if (meta && meta.progress != null) patch.progress = meta.progress;
+      }
     } else {
       patch[colDef.key] = val;
     }
@@ -256,41 +310,64 @@ function TableScreen({ onOpenTask, onCreateTask }) {
 
   return (
     <div className="pw-table-screen">
-      <div className="pw-table-toolbar">
-        <div className="pw-table-toolbar__left">
-          <div className="pw-search pw-search--sm">
+      <div className="pw-view-toolbar pw-table-toolbar">
+        <div className="pw-view-toolbar__left">
+          <div className="pw-search pw-search--inline">
             <Icon name="search" size={14}/>
-            <input className="pw-search__input" placeholder="タスクを検索…"
+            <input className="pw-search__input" placeholder="このビューを絞り込み…"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <div className="pw-table-filter">
-            <button className={"pw-pill" + (filterPhase === "all" ? " pw-pill--solid" : "")} onClick={() => setFilterPhase("all")}>すべて</button>
+          <div className="pw-phase-tabs" role="tablist" aria-label="フェーズで絞り込み">
+            <button role="tab"
+              className={"pw-phase-tab" + (filterPhase === "all" ? " is-active" : "")}
+              onClick={() => setFilterPhase("all")}>すべて</button>
             {phases.map(p => (
-              <button key={p.id}
-                className={"pw-pill" + (filterPhase === p.id ? " pw-pill--solid" : "")}
+              <button key={p.id} role="tab"
+                className={"pw-phase-tab" + (filterPhase === p.id ? " is-active" : "")}
                 onClick={() => setFilterPhase(p.id)}>{p.name}</button>
             ))}
           </div>
+          <FilterDropdown
+            label="担当者"
+            icon="users"
+            options={(window.RESOURCES || []).map(r => ({
+              value: r.id, label: r.name, swatch: r.color,
+            }))}
+            selected={ownerFilter}
+            onChange={setOwnerFilter}/>
+          <FilterDropdown
+            label="ステータス"
+            icon="bolt"
+            options={STATUSES.map(s => ({
+              value: s.value, label: s.label, swatch: s.color,
+            }))}
+            selected={statusFilter}
+            onChange={setStatusFilter}/>
         </div>
-        <div className="pw-table-toolbar__right">
-          <span className={"pw-table-saved" + (showSaved ? " is-on" : "")}>
-            <Icon name="check" size={12}/> 保存済み
-          </span>
+        <div className="pw-view-toolbar__right">
+          <button className="pw-btn pw-btn--ghost pw-btn--sm"><Icon name="upload" size={14}/> Excel ペースト</button>
+          <button className="pw-btn pw-btn--ghost pw-btn--sm"><Icon name="download" size={14}/> CSV</button>
           <span className="pw-divider-v"/>
-          <button className="pw-btn pw-btn--ghost"><Icon name="upload" size={14}/> Excel ペースト</button>
-          <button className="pw-btn pw-btn--ghost"><Icon name="download" size={14}/> CSV</button>
+          <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
+            <Icon name="plus" size={14}/> 新規タスク
+          </button>
         </div>
       </div>
 
-      <div className="pw-table-wrap">
+      <div className={"pw-table-wrap" + (resizing ? " is-resizing" : "")}>
         <div className="pw-table-grid"
-             style={{ gridTemplateColumns: `28px ${TABLE_COLUMNS.map(c => c.width + "px").join(" ")} 1fr` }}>
+             style={{ gridTemplateColumns: `28px ${colWidths.map(w => w + "px").join(" ")} 1fr` }}>
           {/* Header */}
           <div className="pw-tg-cell pw-tg-cell--head pw-tg-cell--rownum"></div>
           {TABLE_COLUMNS.map((c, ci) => (
-            <div key={c.key} className={"pw-tg-cell pw-tg-cell--head" + (c.sticky ? " pw-tg-cell--sticky" : "")}>
+            <div key={c.key}
+              className={"pw-tg-cell pw-tg-cell--head" + (c.sticky ? " pw-tg-cell--sticky" : "") + (resizing?.ci === ci ? " pw-tg-cell--resizing" : "")}>
               <span>{c.label}</span>
               <button className="pw-tg-sort"><Icon name="chevronD" size={10}/></button>
+              <span className="pw-tg-resize"
+                onMouseDown={(e) => startResize(ci, e)}
+                onDoubleClick={() => autoFitCol(ci)}
+                title="ドラッグで幅を変更（ダブルクリックで初期値に戻す）"/>
             </div>
           ))}
           <div className="pw-tg-cell pw-tg-cell--head"></div>
@@ -325,6 +402,11 @@ function TableScreen({ onOpenTask, onCreateTask }) {
 
       <div className="pw-table-foot">
         <span><Icon name="table" size={12}/> {displayed.filter(t => !t.isPhase).length} タスク · {phases.length} フェーズ</span>
+        <span className="pw-table-foot__center">
+          <span className={"pw-table-saved" + (showSaved ? " is-on" : "")}>
+            <Icon name="check" size={12}/> 保存済み
+          </span>
+        </span>
         <span className="pw-table-foot__hint">
           <kbd className="pw-kbd">Tab</kbd> 次セル ·
           <kbd className="pw-kbd">⌘+Tab</kbd> インデント ·
@@ -343,7 +425,10 @@ function TableScreen({ onOpenTask, onCreateTask }) {
             else if (act === "insert-below") insertRowAt(idx + 1);
             else if (act === "insert-phase") insertRowAt(idx + 1, true);
             else if (act === "duplicate") duplicateRow(contextMenu.taskId);
-            else if (act === "delete") deleteRow(contextMenu.taskId);
+            else if (act === "delete") {
+              if (askDeleteTask) askDeleteTask(contextMenu.taskId);
+              else deleteRow(contextMenu.taskId);
+            }
             else if (act === "indent") indent(contextMenu.taskId);
             else if (act === "outdent") outdent(contextMenu.taskId);
             else if (act === "open") onOpenTask(contextMenu.taskId);
@@ -392,7 +477,7 @@ function TableRow({ task, rowIdx, focus, editing, onCellClick, onCellDoubleClick
 // ─────────── Cell ───────────
 function Cell({ task, col, isFocused, isEditing, editing, onClick, onDoubleClick, onCommit, onCancel, onSetDraft, onContextMenu, onOpenTask }) {
   const isPhase = task.isPhase;
-  const editable = !isPhase || ["name", "start", "end"].includes(col.key);
+  const editable = !isPhase || PHASE_EDITABLE.includes(col.key);
   const cls = [
     "pw-tg-cell",
     "pw-tg-cell--" + col.kind,
@@ -444,14 +529,20 @@ function CellValue({ task, col, onOpenTask }) {
         </span>
         {task.milestone && <Icon name="flagSm" size={12} className="pw-tg-name__milestone"/>}
         {!isPhase && (
-          <button className="pw-tg-name__open" onClick={(e) => { e.stopPropagation(); onOpenTask(task.id); }} title="詳細">
-            <Icon name="chevronR" size={11}/>
+          <button className="pw-tg-name__open"
+            onClick={(e) => { e.stopPropagation(); onOpenTask(task.id); }}
+            title="詳細を開く">
+            <Icon name="panelR" size={14}/>
           </button>
         )}
       </div>
     );
   }
-  if (col.kind === "status" && !isPhase) return <StatusPill status={v}/>;
+  if (col.kind === "longtext") {
+    if (!v) return <span className="pw-tg-empty">—</span>;
+    return <span className="pw-tg-longtext" title={v}>{v}</span>;
+  }
+  if (col.kind === "status") return <TableStatusPill status={v}/>;
   if (col.kind === "owner" && !isPhase) {
     const r = RESOURCES.find(x => x.id === v);
     return r ? <div className="pw-tg-owner"><Avatar resource={r} size={20}/><span>{r.name.split(" ")[0]}</span></div> : <span className="pw-tg-empty">—</span>;
@@ -469,19 +560,22 @@ function CellValue({ task, col, onOpenTask }) {
     if (v == null) return <span className="pw-tg-empty">—</span>;
     return <span className="pw-tg-num">{v}{col.suffix || ""}</span>;
   }
-  if (col.kind === "progress") {
-    const pct = Math.round((v || 0) * 100);
-    return (
-      <div className="pw-tg-progress">
-        <Progress value={v || 0} height={4}/>
-        <span className="pw-tg-progress__pct">{pct}%</span>
-      </div>
-    );
-  }
   if (col.kind === "deps" && !isPhase) {
     const preds = (v || []);
     if (!preds.length) return <span className="pw-tg-empty">—</span>;
-    return <span className="pw-tg-deps">{preds.join(", ")}</span>;
+    const names = preds
+      .map(id => (window.TASKS || []).find(t => t.id === id))
+      .filter(Boolean);
+    return (
+      <div className="pw-tg-deps-chips">
+        {names.map(t => (
+          <span key={t.id} className="pw-tg-dep-chip" title={t.name}>
+            <Icon name="link" size={10}/>
+            <span className="pw-tg-dep-chip__name">{t.name}</span>
+          </span>
+        ))}
+      </div>
+    );
   }
   if (col.kind === "flag" && !isPhase) {
     return v ? <span className="pw-tg-cp">CP</span> : <span className="pw-tg-empty">—</span>;
@@ -518,6 +612,12 @@ function CellEditor({ task, col, draft, setDraft, onCommit, onCancel }) {
   if (col.kind === "subs") {
     return <SubsEditor draft={draft || []} setDraft={setDraft} onCommit={onCommit} onCancel={onCancel}/>;
   }
+  if (col.kind === "deps") {
+    return <DepsEditor task={task} draft={draft || []} setDraft={setDraft} onCommit={onCommit} onCancel={onCancel}/>;
+  }
+  if (col.kind === "longtext") {
+    return <LongtextEditor draft={draft || ""} setDraft={setDraft} onCommit={onCommit} onCancel={onCancel}/>;
+  }
   if (col.kind === "date") {
     return (
       <input ref={inputRef} type="date" className="pw-tg-input"
@@ -538,17 +638,6 @@ function CellEditor({ task, col, draft, setDraft, onCommit, onCancel }) {
       />
     );
   }
-  if (col.kind === "progress") {
-    const v = typeof draft === "number" && draft <= 1 ? Math.round(draft * 100) : (parseInt(draft, 10) || 0);
-    return (
-      <input ref={inputRef} type="number" min="0" max="100" className="pw-tg-input pw-tg-input--num"
-        value={v}
-        onChange={e => setDraft(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={() => onCommit(draft)}
-      />
-    );
-  }
   // Text default
   return (
     <input ref={inputRef} type="text" className="pw-tg-input"
@@ -560,27 +649,25 @@ function CellEditor({ task, col, draft, setDraft, onCommit, onCancel }) {
   );
 }
 
-const STATUSES = [
-  { value: "todo",        label: "未着手", color: "var(--text-tertiary)" },
-  { value: "in-progress", label: "進行中", color: "var(--accent)" },
-  { value: "blocked",     label: "停滞",   color: "var(--critical)" },
-  { value: "done",        label: "完了",   color: "var(--success)" },
-];
+// STATUSES + STATUS_BY_VALUE come from data.jsx (window globals).
 
-function StatusPill({ status }) {
-  const s = STATUSES.find(x => x.value === status) || STATUSES[0];
+function TableStatusPill({ status }) {
+  const s = STATUS_BY_VALUE[status] || STATUSES[0];
   return (
     <span className="pw-tg-status">
       <span className="pw-tg-status__dot" style={{ background: s.color }}/>
-      {s.label}
+      {s.short}
     </span>
   );
 }
 
 function StatusEditor({ draft, setDraft, onCommit, onCancel }) {
+  // Show 停滞 separated visually since it's orthogonal to ordinal progress.
+  const ordinal = STATUSES.filter(s => s.value !== "blocked");
+  const blocked = STATUSES.find(s => s.value === "blocked");
   return (
     <div className="pw-tg-popover">
-      {STATUSES.map(s => (
+      {ordinal.map(s => (
         <button key={s.value} className={"pw-tg-popover__item" + (draft === s.value ? " is-selected" : "")}
           onClick={() => onCommit(s.value, "down")}>
           <span className="pw-tg-status__dot" style={{ background: s.color }}/>
@@ -588,6 +675,13 @@ function StatusEditor({ draft, setDraft, onCommit, onCancel }) {
           {draft === s.value && <Icon name="check" size={12}/>}
         </button>
       ))}
+      <div className="pw-tg-popover__divider"/>
+      <button className={"pw-tg-popover__item" + (draft === blocked.value ? " is-selected" : "")}
+        onClick={() => onCommit(blocked.value, "down")}>
+        <span className="pw-tg-status__dot" style={{ background: blocked.color }}/>
+        {blocked.label}
+        {draft === blocked.value && <Icon name="check" size={12}/>}
+      </button>
     </div>
   );
 }
@@ -609,6 +703,104 @@ function OwnerEditor({ draft, setDraft, onCommit, onCancel }) {
           {draft === r.id && <Icon name="check" size={12}/>}
         </button>
       ))}
+    </div>
+  );
+}
+
+// Multi-line text edited in a popover so the cell stays a single row tall.
+function LongtextEditor({ draft, setDraft, onCommit, onCancel }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    ref.current?.focus();
+    const len = ref.current?.value.length ?? 0;
+    ref.current?.setSelectionRange(len, len);
+  }, []);
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault(); onCommit(draft, "down");
+    }
+    else if (e.key === "Tab") {
+      e.preventDefault(); onCommit(draft, e.shiftKey ? "left" : "right");
+    }
+    // Plain Enter inserts a newline (default textarea behavior).
+  };
+  return (
+    <div className="pw-tg-popover pw-tg-popover--longtext">
+      <textarea ref={ref}
+        className="pw-tg-textarea"
+        rows={4}
+        placeholder="作業内容、受け入れ基準、関連リンクなど…"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      <div className="pw-tg-popover__foot">
+        <span className="pw-tg-popover__hint">
+          <kbd className="pw-kbd">⌘Enter</kbd> 確定 ·
+          <kbd className="pw-kbd">Esc</kbd> キャンセル
+        </span>
+        <button className="pw-tg-popover__done" onClick={() => onCommit(draft, "down")}>
+          <Icon name="check" size={12}/> 確定
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Predecessor picker — search box + filtered task list, multi-select.
+function DepsEditor({ task, draft, setDraft, onCommit, onCancel }) {
+  const [q, setQ] = React.useState("");
+  const inputRef = React.useRef(null);
+  React.useEffect(() => { inputRef.current?.focus(); }, []);
+  const allTasks = window.TASKS || [];
+  const candidates = allTasks.filter(t => !t.isPhase && t.id !== task.id);
+  const filtered = candidates.filter(t => !q || t.name.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (id) => {
+    setDraft(draft.includes(id) ? draft.filter(x => x !== id) : [...draft, id]);
+  };
+  const phasesById = Object.fromEntries(allTasks.filter(t => t.isPhase).map(p => [p.id, p]));
+  return (
+    <div className="pw-tg-popover pw-tg-popover--deps">
+      <div className="pw-tg-popover__search">
+        <Icon name="search" size={12}/>
+        <input ref={inputRef}
+          className="pw-tg-popover__search-input"
+          placeholder="タスク名で検索…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Enter") { e.preventDefault(); onCommit(draft, "down"); }
+          }}
+        />
+      </div>
+      <div className="pw-tg-popover__list">
+        {filtered.map(t => {
+          const on = draft.includes(t.id);
+          const phase = phasesById[t.parent];
+          return (
+            <button key={t.id}
+              className={"pw-tg-popover__item pw-tg-popover__item--task" + (on ? " is-selected" : "")}
+              onClick={() => toggle(t.id)}>
+              <span className={"pw-checkbox" + (on ? " is-on" : "")}>
+                {on && <Icon name="check" size={9}/>}
+              </span>
+              <span className="pw-tg-popover__task">
+                <span className="pw-tg-popover__task-name">{t.name}</span>
+                {phase && <span className="pw-tg-popover__task-meta">{phase.name}</span>}
+              </span>
+              {t.critical && <span className="pw-tg-cp">CP</span>}
+            </button>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="pw-tg-popover__empty">該当するタスクがありません</div>
+        )}
+      </div>
+      <button className="pw-tg-popover__done" onClick={() => onCommit(draft, "down")}>
+        <Icon name="check" size={12}/> 確定（{draft.length}件）
+      </button>
     </div>
   );
 }
