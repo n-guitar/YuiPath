@@ -401,6 +401,16 @@ function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource }) {
           <div className="pw-res__col-summary">合計</div>
         </div>
         <div className="pw-res__body">
+          {resources.length === 0 && (
+            <div className="pw-empty pw-empty--inline">
+              <Icon name="users" size={28}/>
+              <div className="pw-empty__title">メンバーがいません</div>
+              <div className="pw-empty__sub">「+ メンバー追加」から最初のメンバーを登録してください</div>
+              <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateResource}>
+                <Icon name="plus" size={12}/> メンバー追加
+              </button>
+            </div>
+          )}
           {resources.map(r => {
             const loads = weekLoads[r.id] || new Array(weeks).fill(0);
             const peak = Math.max(...loads);
@@ -466,6 +476,16 @@ function ProjectsListScreen({ onSwitchProject, onEditProject, onCreateProject })
           </button>
         </div>
       </div>
+      {projects.length === 0 && (
+        <div className="pw-empty pw-empty--inline">
+          <Icon name="folder" size={28}/>
+          <div className="pw-empty__title">プロジェクトがありません</div>
+          <div className="pw-empty__sub">「+ 新規プロジェクト」から最初のプロジェクトを作成してください</div>
+          <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateProject}>
+            <Icon name="plus" size={12}/> 新規プロジェクト
+          </button>
+        </div>
+      )}
       <div className="pw-projects__grid">
         {projects.map(p => (
           <div key={p.id}
@@ -540,11 +560,19 @@ function TaskDrawer({ taskId, scrollTo, scrollToCommentId, onClose, onDelete, as
     patch(p);
   };
 
-  // Date change recomputes duration if both endpoints valid.
+  // Date change recomputes duration. If the new value would invert the range
+  // (end < start), auto-snap the other endpoint so duration stays >= 0.
   const setDate = (key, val) => {
     const p = { [key]: val };
     const next = { ...t, ...p };
-    if (next.start && next.end) p.duration = daysBetween(next.start, next.end);
+    if (next.start && next.end && parseDate(next.start) > parseDate(next.end)) {
+      if (key === "start") p.end = val;     // pulled end up to match
+      else p.start = val;                    // pushed start down to match
+    }
+    const recomputed = { ...t, ...p };
+    if (recomputed.start && recomputed.end) {
+      p.duration = Math.max(0, daysBetween(recomputed.start, recomputed.end));
+    }
     patch(p);
   };
 
@@ -583,6 +611,15 @@ function TaskDrawer({ taskId, scrollTo, scrollToCommentId, onClose, onDelete, as
             autoFocus={!t.name}
             onChange={(e) => patch({ name: e.target.value })}
           />
+          {!t.isPhase && (
+            <button
+              type="button"
+              className={"pw-pill pw-pill--milestone-toggle" + (t.milestone ? " is-on" : "")}
+              onClick={() => patch({ milestone: !t.milestone })}
+              title="マイルストーンとして扱う（ガントでひし形表示）">
+              <Icon name="flagSm" size={12}/> マイルストーン
+            </button>
+          )}
         </div>
         {t.critical && (
           <div className="pw-drawer__cp-banner">
@@ -1065,11 +1102,17 @@ function ProjectDrawer({ projectId, onClose, onDelete, onSwitchTo }) {
 
   const patch = (px) => updateProject(p.id, px);
 
-  // Date change auto-shifts baselineEnd if it was tracking the original end date.
+  // Date change auto-shifts baselineEnd if it was tracking the original end
+  // date, and snaps the other endpoint if the user inverts the range.
   const setDate = (key, val) => {
     const nextPatch = { [key]: val };
     if (key === "endDate" && (p.baselineEnd === p.endDate || !p.baselineEnd)) {
       nextPatch.baselineEnd = val;
+    }
+    const next = { ...p, ...nextPatch };
+    if (next.startDate && next.endDate && parseDate(next.startDate) > parseDate(next.endDate)) {
+      if (key === "startDate") nextPatch.endDate = val;
+      else nextPatch.startDate = val;
     }
     patch(nextPatch);
   };

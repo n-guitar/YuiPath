@@ -328,6 +328,49 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 2px;
 }
 
+/* ─────────── Empty state (shared) ─────────── */
+.pw-empty {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.pw-empty .pw-icon { color: var(--border-strong); margin-bottom: 4px; }
+.pw-empty__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.pw-empty__sub {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+.pw-empty .pw-btn { margin-top: 6px; }
+.pw-empty--inline {
+  width: 100%;
+  padding: 32px 24px;
+}
+
+/* Table grid empty-state row spans all columns and centers the message */
+.pw-tg-empty-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Gantt empty-state takes the place of the list+timeline (spans grid cols) */
+.pw-gantt__empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ─────────── Avatars ─────────── */
 .pw-avatar {
   display: inline-grid; place-items: center;

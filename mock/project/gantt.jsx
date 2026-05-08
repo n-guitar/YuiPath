@@ -107,20 +107,38 @@ function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
       </div>
 
       <div className="pw-gantt__body">
-        <GanttList tasks={visibleTasks} collapsed={collapsed} setCollapsed={setCollapsed} onOpenTask={onOpenTask} selectedId={selectedId} setHoverId={setHoverId} />
-        <GanttTimeline
-          tasks={visibleTasks}
-          startDate={startDate}
-          totalDays={totalDays}
-          dayPx={dayPx}
-          zoom={zoom}
-          xFor={xFor}
-          wFor={wFor}
-          todayX={todayX}
-          onOpenTask={onOpenTask}
-          selectedId={focusId}
-          setHoverId={setHoverId}
-        />
+        {visibleTasks.length === 0 ? (
+          <div className="pw-gantt__empty">
+            <div className="pw-empty">
+              <Icon name="search" size={28}/>
+              <div className="pw-empty__title">該当するタスクがありません</div>
+              <div className="pw-empty__sub">フィルタを変更するか、解除して再表示できます</div>
+              {(ownerFilter.length || statusFilter.length) > 0 && (
+                <button className="pw-btn pw-btn--ghost pw-btn--sm"
+                  onClick={() => { setOwnerFilter([]); setStatusFilter([]); }}>
+                  <Icon name="close" size={12}/> フィルタを解除
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <GanttList tasks={visibleTasks} collapsed={collapsed} setCollapsed={setCollapsed} onOpenTask={onOpenTask} selectedId={selectedId} setHoverId={setHoverId} />
+            <GanttTimeline
+              tasks={visibleTasks}
+              startDate={startDate}
+              totalDays={totalDays}
+              dayPx={dayPx}
+              zoom={zoom}
+              xFor={xFor}
+              wFor={wFor}
+              todayX={todayX}
+              onOpenTask={onOpenTask}
+              selectedId={focusId}
+              setHoverId={setHoverId}
+            />
+          </>
+        )}
       </div>
 
       <div className="pw-gantt__footer">

@@ -152,10 +152,16 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
       if (!isNaN(n)) patch[colDef.key] = n;
     } else if (colDef.kind === "date") {
       patch[colDef.key] = val;
-      // Auto-update duration if both dates known
+      // Snap the other endpoint if the new value would invert the range,
+      // then recompute duration (clamped to >= 0).
       const next = { ...task, ...patch };
-      if (next.start && next.end) {
-        patch.duration = daysBetween(next.start, next.end);
+      if (next.start && next.end && parseDate(next.start) > parseDate(next.end)) {
+        if (colDef.key === "start") patch.end = val;
+        else patch.start = val;
+      }
+      const recomputed = { ...task, ...patch };
+      if (recomputed.start && recomputed.end) {
+        patch.duration = Math.max(0, daysBetween(recomputed.start, recomputed.end));
       }
     } else if (colDef.kind === "status") {
       patch.status = val;
@@ -389,6 +395,31 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
               isFirstOfPhase={ri === 0 || displayed[ri-1]?.isPhase !== task.isPhase || (task.isPhase && true)}
             />
           ))}
+
+          {/* Empty state when filter excludes everything */}
+          {displayed.length === 0 && (
+            <div className="pw-tg-empty-row"
+              style={{ gridColumn: `1 / span ${TABLE_COLUMNS.length + 2}` }}>
+              <div className="pw-empty">
+                <Icon name="search" size={28}/>
+                <div className="pw-empty__title">該当するタスクがありません</div>
+                <div className="pw-empty__sub">
+                  {tasks.filter(t => !t.isPhase).length === 0
+                    ? "+ 新規タスクから最初のタスクを作成してください"
+                    : "フィルタを変更するか、解除して再表示できます"}
+                </div>
+                {(filterPhase !== "all" || search || ownerFilter.length || statusFilter.length) > 0 && (
+                  <button className="pw-btn pw-btn--ghost pw-btn--sm"
+                    onClick={() => {
+                      setFilterPhase("all"); setSearch("");
+                      setOwnerFilter([]); setStatusFilter([]);
+                    }}>
+                    <Icon name="close" size={12}/> フィルタを解除
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Append row */}
           <div className="pw-tg-cell pw-tg-cell--rownum pw-tg-cell--append"></div>
