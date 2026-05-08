@@ -9,6 +9,22 @@ const fmtJP = (s) => { const d = parseDate(s); return `${d.getMonth()+1}/${d.get
 const fmtJPLong = (s) => { const d = parseDate(s); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; };
 const fmtMoney = (n) => "¥" + n.toLocaleString("ja-JP");
 
+// Returns the "next milestone" task for a given phase id, given a task list
+// and a `today` ISO date. Picks the soonest upcoming milestone (end >= today);
+// falls back to the latest past milestone if none are upcoming. Returns null
+// when the phase has no milestones.
+function nextMilestoneFor(phaseId, tasks, todayIso) {
+  const today = parseDate(todayIso);
+  const within = (tasks || []).filter(t => t.parent === phaseId && t.milestone);
+  if (within.length === 0) return null;
+  const upcoming = within
+    .filter(m => parseDate(m.end) >= today)
+    .sort((a, b) => a.end < b.end ? -1 : 1);
+  if (upcoming.length > 0) return upcoming[0];
+  const sorted = [...within].sort((a, b) => a.end < b.end ? -1 : 1);
+  return sorted[sorted.length - 1];
+}
+
 // Relative time for comments / activity. Pinned to NOW for repeatable mock.
 function fmtRelativeTime(iso, nowIso) {
   if (!iso) return "";
@@ -231,5 +247,6 @@ function FilterDropdown({ label, icon, options, selected, onChange, placeholder 
 
 Object.assign(window, {
   parseDate, fmtDate, daysBetween, addDays, fmtJP, fmtJPLong, fmtMoney, fmtRelativeTime, MS_DAY,
+  nextMilestoneFor,
   Avatar, AvatarStack, PrimaryAvatar, StatusPill, HealthDot, Icon, Progress, FilterDropdown,
 });

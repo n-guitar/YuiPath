@@ -4,6 +4,7 @@ const NAV = [
   { id: "dashboard", label: "ダッシュボード", icon: "home" },
   { id: "table",     label: "テーブル",       icon: "table" },
   { id: "gantt",     label: "ガントチャート",  icon: "gantt" },
+  { id: "calendar",  label: "カレンダー",     icon: "calendar" },
   { id: "resources", label: "リソース",       icon: "users" },
 ];
 
@@ -293,6 +294,7 @@ function App() {
           showProjectsList ? "Projects" :
           view === "dashboard" ? "Dashboard" :
           view === "gantt" ? "Gantt" :
+          view === "calendar" ? "Calendar" :
           view === "resources" ? "Resources" : view
         }>
           {showProjectsList && (
@@ -302,8 +304,9 @@ function App() {
               onCreateProject={openCreateProject}/>
           )}
           {!showProjectsList && view === "dashboard" && <DashboardScreen onOpenTask={openTask} onOpenResource={openResource}/>}
-          {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate} askDeleteTask={askDeleteTask}/>}
+          {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate} askDeleteTask={askDeleteTask} askConfirm={askConfirm} closeConfirm={closeConfirm}/>}
           {!showProjectsList && view === "gantt" &&     <GanttScreen tweaks={tweaks} onOpenTask={openTask} onCreateTask={openCreate} selectedId={openTaskId}/>}
+          {!showProjectsList && view === "calendar" &&  <CalendarScreen onOpenTask={openTask}/>}
           {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask} onOpenResource={openResource} onCreateResource={openCreateResource}/>}
         </div>
       </main>
@@ -419,6 +422,7 @@ function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick }) {
     "dashboard": "ダッシュボード",
     "table":     "テーブル",
     "gantt":     "ガントチャート",
+    "calendar":  "カレンダー",
     "resources": "リソース管理",
   };
   return (

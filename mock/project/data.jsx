@@ -25,6 +25,19 @@ const PROJECTS = [
     health: "at-risk",
     members: 6,
     current: true,
+    // 祝日（プロジェクト固有）。今は表示のみ。営業日計算への反映は次フェーズ。
+    holidays: [
+      { date: "2026-04-29", name: "昭和の日" },
+      { date: "2026-05-03", name: "憲法記念日" },
+      { date: "2026-05-04", name: "みどりの日" },
+      { date: "2026-05-05", name: "こどもの日" },
+      { date: "2026-05-06", name: "振替休日" },
+      { date: "2026-07-20", name: "海の日" },
+      { date: "2026-08-11", name: "山の日" },
+      { date: "2026-09-21", name: "敬老の日" },
+      { date: "2026-09-22", name: "国民の休日" },
+      { date: "2026-09-23", name: "秋分の日" },
+    ],
   },
   {
     id: "prj-mobile",
@@ -286,6 +299,101 @@ const ACTIVITY = [
   { id: "a5", who: "r5", taskId: "t13", kind: "assign",   text: "「管理画面」を副担当に追加",             time: "2 日前" },
 ];
 
+// ─────────── CSV import / export ───────────
+// Schema (one row per task / phase). Array fields use ";" as a separator
+// inside the cell. Booleans serialize as "true" / "false".
+const CSV_COLS = [
+  "id", "name", "parent", "isPhase",
+  "start", "end", "duration", "status", "progress",
+  "owner", "subs", "predecessors",
+  "critical", "milestone", "depth", "description",
+];
+
+function _csvField(v) {
+  if (v == null) return "";
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function tasksToCsv(tasks) {
+  const lines = [CSV_COLS.join(",")];
+  tasks.forEach(t => {
+    const row = CSV_COLS.map(c => {
+      const v = t[c];
+      if (Array.isArray(v)) return _csvField(v.join(";"));
+      if (typeof v === "boolean") return v ? "true" : "false";
+      return _csvField(v);
+    });
+    lines.push(row.join(","));
+  });
+  return lines.join("\n");
+}
+
+// Tiny CSV parser: handles quoted fields with embedded commas/newlines/quotes.
+function _parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); rows.push(row); row = []; field = "";
+      }
+      else if (c === '"' && field === "") inQuotes = true;
+      else field += c;
+    }
+  }
+  if (field !== "" || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function csvToTasks(text) {
+  const rows = _parseCsv(text).filter(r => r.length > 1 || (r.length === 1 && r[0] !== ""));
+  if (rows.length === 0) return { tasks: [], errors: ["空のファイルです"] };
+  const headers = rows[0];
+  const errors = [];
+  CSV_COLS.forEach(c => {
+    if (!headers.includes(c) && ["id", "name"].includes(c)) {
+      errors.push(`必須列が見つかりません: ${c}`);
+    }
+  });
+  if (errors.length > 0) return { tasks: [], errors };
+  const tasks = rows.slice(1).map((r, ri) => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      const v = r[i] ?? "";
+      if (h === "isPhase" || h === "critical" || h === "milestone") obj[h] = v === "true";
+      else if (h === "duration" || h === "depth") obj[h] = v ? parseInt(v, 10) || 0 : 0;
+      else if (h === "progress") obj[h] = v ? parseFloat(v) || 0 : 0;
+      else if (h === "subs" || h === "predecessors") obj[h] = v ? v.split(";").filter(Boolean) : [];
+      else if (h === "owner") obj[h] = v || undefined;
+      else obj[h] = v;
+    });
+    if (!obj.id) errors.push(`行 ${ri + 2}: id が空です`);
+    if (!obj.depth && !obj.isPhase) obj.depth = 1;
+    return obj;
+  });
+  return { tasks, errors };
+}
+
+function downloadCsv(filename, text) {
+  // BOM helps Excel auto-detect UTF-8
+  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // Initial mirror so the PROJECT/PROJECTS_KPIS Proxies can find the array.
 window.PROJECTS = PROJECTS;
 
@@ -296,4 +404,5 @@ Object.assign(window, {
   useProjects, setProjects, updateProject, switchToProject, deleteProject,
   useComments, setComments, addComment, updateComment, deleteComment,
   STATUSES, STATUS_BY_VALUE,
+  tasksToCsv, csvToTasks, downloadCsv, CSV_COLS,
 });

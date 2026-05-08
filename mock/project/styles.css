@@ -328,6 +328,204 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 2px;
 }
 
+/* ─────────── Next-milestone chip (shown on phase rows) ─────────── */
+.pw-next-ms {
+  display: inline-flex; align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 6px;
+  max-width: 240px;
+  transition: background .12s;
+}
+.pw-next-ms:hover { background: var(--accent-soft-2); }
+.pw-next-ms__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.pw-next-ms__date {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* ─────────── Calendar (month) view ─────────── */
+.pw-cal {
+  display: flex; flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+}
+.pw-cal__nav {
+  display: flex; align-items: center;
+  gap: 4px;
+}
+.pw-cal__month {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.pw-cal__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+.pw-cal__weekday {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-align: left;
+  letter-spacing: 0.04em;
+}
+.pw-cal__weekday--sun { color: var(--critical); }
+.pw-cal__weekday--sat { color: var(--accent); }
+.pw-cal__grid {
+  flex: 1;
+  display: grid;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  min-height: 0;
+  overflow-y: auto;
+}
+.pw-cal__week {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+.pw-cal__week:last-child { border-bottom: 0; }
+.pw-cal__week-cells {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  height: 100%;
+}
+.pw-cal__day {
+  position: relative;
+  border-right: 1px solid var(--border-soft);
+  padding: 4px 6px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.pw-cal__day:last-child { border-right: 0; }
+.pw-cal__day--weekend { background: var(--surface-2); }
+.pw-cal__day--other  { background: var(--surface-2); }
+.pw-cal__day--other .pw-cal__day-num { color: var(--text-tertiary); opacity: 0.6; }
+.pw-cal__day-num {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.pw-cal__day--today .pw-cal__day-num {
+  color: white;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0 6px;
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  line-height: 18px;
+  font-weight: 600;
+}
+.pw-cal__day--holiday {
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface));
+}
+.pw-cal__day--holiday.pw-cal__day--weekend {
+  background: color-mix(in srgb, var(--critical) 12%, var(--surface-2));
+}
+.pw-cal__day--holiday .pw-cal__day-num {
+  color: var(--critical);
+  font-weight: 600;
+}
+.pw-cal__day-holiday {
+  display: block;
+  font-size: 10px;
+  color: var(--critical);
+  margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Calendar legend (toolbar right) */
+.pw-cal__legend {
+  display: flex; align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pw-cal__legend-item {
+  display: inline-flex; align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.pw-cal__legend-swatch {
+  width: 10px; height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.pw-cal__legend-swatch--holiday {
+  background: color-mix(in srgb, var(--critical) 24%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--critical) 50%, transparent);
+}
+
+.pw-cal__week-bars {
+  position: absolute;
+  left: 0; right: 0;
+  pointer-events: none;
+}
+.pw-cal__bar {
+  position: absolute;
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--bar-color) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--bar-color) 60%, transparent);
+  border-left: 3px solid var(--bar-color);
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--text);
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 2px;
+  transition: transform .1s, box-shadow .1s;
+}
+.pw-cal__bar:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+  z-index: 5;
+}
+.pw-cal__bar-name {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: left;
+}
+.pw-cal__bar--milestone {
+  background: color-mix(in srgb, var(--bar-color) 22%, var(--surface));
+  font-weight: 600;
+}
+.pw-cal__bar--critical {
+  outline: 1px solid var(--critical);
+  outline-offset: 1px;
+}
+/* Bars that extend past the week edge get angled "continuation" markers */
+.pw-cal__bar--clip-l { border-radius: 0 4px 4px 0; border-left: 0; padding-left: 6px; }
+.pw-cal__bar--clip-r { border-radius: 4px 0 0 4px; padding-right: 4px; }
+.pw-cal__bar--clip-l.pw-cal__bar--clip-r { border-radius: 0; }
+
 /* ─────────── Empty state (shared) ─────────── */
 .pw-empty {
   display: flex; flex-direction: column;
@@ -1841,59 +2039,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   }
 }
 
-/* ─────────── Modal ─────────── */
-.pw-modal {
-  position: fixed; inset: 0;
-  z-index: 200;
-  display: grid; place-items: center;
-  padding: 40px 24px;
-}
-.pw-modal__backdrop {
-  position: absolute; inset: 0;
-  background: rgba(20, 19, 17, 0.32);
-  backdrop-filter: blur(2px);
-}
-.pw-modal__card {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.06);
-  width: min(820px, 100%);
-  max-height: calc(100vh - 80px);
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
-.pw-modal__card--task { width: min(720px, 100%); }
-
-.pw-modal__head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.pw-modal__crumb {
-  display: flex; align-items: center; gap: 8px;
-  color: var(--text-tertiary); font-size: 12.5px;
-}
-.pw-modal__crumb-label { color: var(--text-2); font-weight: 500; }
-
-.pw-modal__title-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 16px 18px 4px;
-  flex-shrink: 0;
-}
-.pw-modal__title-input {
-  flex: 1;
-  border: 0; background: transparent; padding: 4px 0;
-  font-family: inherit;
-  font-size: 22px; font-weight: 600; letter-spacing: -0.01em;
-  color: var(--text-1);
-  outline: none;
-}
-.pw-modal__title-input::placeholder { color: var(--text-tertiary); font-weight: 500; }
-.pw-modal__title-input:focus { box-shadow: inset 0 -2px 0 var(--accent-soft-2); }
-
+/* Milestone toggle pill (used in TaskDrawer's title row) */
 .pw-pill--milestone-toggle {
   cursor: pointer; user-select: none;
   background: var(--surface-2); border: 1px solid var(--border);
@@ -1903,23 +2049,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-pill--milestone-toggle.is-on {
   background: var(--accent-soft); color: var(--accent); border-color: transparent;
 }
-
-.pw-modal__body {
-  padding: 6px 18px 18px;
-  overflow-y: auto;
-  flex: 1; min-height: 0;
-}
-
-.pw-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px 24px;
-  padding-top: 10px;
-}
-.pw-field { display: flex; flex-direction: column; gap: 6px; }
-.pw-field--full { grid-column: 1 / -1; }
-.pw-field__label { font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
-.pw-field__hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
 
 .pw-input, .pw-select, .pw-textarea {
   font: inherit;
@@ -2195,14 +2324,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .pw-chip__x:hover { background: var(--surface-2); color: var(--text-1); }
 
-.pw-modal__foot {
-  display: flex; justify-content: space-between; align-items: center; gap: 10px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
-  flex-shrink: 0;
-}
-.pw-modal__foot-right { display: flex; gap: 8px; }
 .pw-btn--danger { color: var(--critical); }
 .pw-btn--danger:hover { background: var(--critical-soft); }
 

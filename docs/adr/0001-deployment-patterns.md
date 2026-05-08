@@ -66,13 +66,18 @@ ProjectLibre は Java デスクトップ + 独自 Cloud SaaS の2系統。我々
 - **トリガー**: 重大なリリース blocker に当たった場合、Wails (Go) や Electron へ撤退も視野
 - 現状リスク: 中
 
-### MPP (MS Project) ファイル互換
-- mpxj (LGPL Java) を移植 or サイドカー実行が必要
-- リバースエンジニアリングのみの非公式形式なので完全互換は困難
-- **対処**: MVP では JSON / XML / CSV のみ対応、MPP は Phase 4
+### ファイル互換は CSV のみに絞る
+- ProjectLibre 調査 (issue.md) では MPP 互換が大きな差別化要因として挙がっていたが、
+  本プロジェクトでは **MS Project 互換は対象外** とする
+- 理由: MPP はプロプライエタリなバイナリ形式でリバースエンジニアリングのみ、完全
+  互換は困難。実装コスト（mpxj 移植 or サイドカー実行）に対して、ターゲットユーザー
+  （個人・中小組織・OSS コミュニティ）における移行需要が小さい
+- 対象とする外部形式: **JSON（独自スキーマ）／CSV** のみ
+- ターゲット層が MS Project からの移行を強く望む場合は revisit 候補
 
 ## Revisit when
 
 - Tauri 2.x で重大な互換性問題が発生
 - AWS Lambda の代替（Cloudflare Workers 等）の方がコスト/レイテンシで明らかに優位になった
 - ユーザーから「ブラウザのみで使いたい、Desktop 不要」が大多数になった（Pattern A の意義低下）
+- MS Project 互換 (MPP I/O) の需要が想定以上に強かった場合（現状はスコープ外）

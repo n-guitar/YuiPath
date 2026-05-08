@@ -27,7 +27,7 @@ const TABLE_COLUMNS = [
 // Cell editability rules. Phases: only name/description/start/end editable.
 const PHASE_EDITABLE = ["name", "description", "start", "end"];
 
-function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
+function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, closeConfirm }) {
   const tasks = useTasks();
   useResources();   // re-render owner filter options when resources change
   const [focus, setFocus] = React.useState({ row: 0, col: 0 });
@@ -40,6 +40,56 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
   const [savedFlash, setSavedFlash] = React.useState(0);
   const [colWidths, setColWidths] = React.useState(() => TABLE_COLUMNS.map(c => c.width));
   const [resizing, setResizing] = React.useState(null);   // { ci, startX, startW }
+
+  // CSV import file picker (hidden <input>)
+  const fileInputRef = React.useRef(null);
+  const handleExport = () => {
+    const csv = tasksToCsv(tasks);
+    const ts = new Date().toISOString().slice(0, 10);
+    downloadCsv(`tasks-${ts}.csv`, csv);
+  };
+  const handleImportClick = () => fileInputRef.current?.click();
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";  // allow re-selecting same file later
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      const { tasks: parsed, errors } = csvToTasks(text);
+      if (errors.length > 0) {
+        if (askConfirm) askConfirm({
+          title: "CSV を読み込めませんでした",
+          body: <ul style={{ margin: 0, paddingLeft: 18 }}>{errors.map((er, i) => <li key={i}>{er}</li>)}</ul>,
+          confirmLabel: "閉じる",
+          destructive: false,
+          onConfirm: () => closeConfirm && closeConfirm(),
+        });
+        return;
+      }
+      const phaseCount = parsed.filter(t => t.isPhase).length;
+      const leafCount  = parsed.filter(t => !t.isPhase).length;
+      const fileName   = file.name;
+      if (askConfirm) askConfirm({
+        title: "CSV をインポートしますか？",
+        body: (
+          <>
+            <p>「<strong>{fileName}</strong>」から <strong>{parsed.length} 行</strong>
+              （フェーズ {phaseCount} / タスク {leafCount}）を読み込みます。</p>
+            <p className="pw-confirm__warn">⚠️ 既存のタスクはすべて置き換えられます。</p>
+          </>
+        ),
+        confirmLabel: "インポート",
+        destructive: true,
+        onConfirm: () => {
+          setTasks(parsed);
+          flashSaved();
+          closeConfirm && closeConfirm();
+        },
+      });
+    };
+    reader.readAsText(file);
+  };
 
   // Column resize — drag from header right edge. Min 50px.
   React.useEffect(() => {
@@ -351,8 +401,21 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask }) {
             onChange={setStatusFilter}/>
         </div>
         <div className="pw-view-toolbar__right">
-          <button className="pw-btn pw-btn--ghost pw-btn--sm"><Icon name="upload" size={14}/> Excel ペースト</button>
-          <button className="pw-btn pw-btn--ghost pw-btn--sm"><Icon name="download" size={14}/> CSV</button>
+          {/* Permissive accept — some systems don't tag CSV files with a
+              recognized MIME type (e.g. Excel-exported CSVs).
+              Falling back to extension + plain text + any file. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain,application/vnd.ms-excel,application/csv"
+            style={{ display: "none" }}
+            onChange={handleImportFile}/>
+          <button className="pw-btn pw-btn--ghost pw-btn--sm" onClick={handleImportClick} title="CSV からタスクをインポート">
+            <Icon name="upload" size={14}/> CSV インポート
+          </button>
+          <button className="pw-btn pw-btn--ghost pw-btn--sm" onClick={handleExport} title="現在のタスク一覧を CSV でダウンロード">
+            <Icon name="download" size={14}/> CSV エクスポート
+          </button>
           <span className="pw-divider-v"/>
           <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
             <Icon name="plus" size={14}/> 新規タスク
@@ -547,6 +610,7 @@ function CellValue({ task, col, onOpenTask }) {
   const v = task[col.key];
 
   if (col.key === "name") {
+    const nextMs = isPhase ? nextMilestoneFor(task.id, window.TASKS || [], TODAY) : null;
     return (
       <div className="pw-tg-name">
         <span className="pw-tg-name__indent" style={{ width: (task.depth || 0) * 16 }} />
@@ -559,6 +623,16 @@ function CellValue({ task, col, onOpenTask }) {
           {task.name || "新しいタスク…"}
         </span>
         {task.milestone && <Icon name="flagSm" size={12} className="pw-tg-name__milestone"/>}
+        {nextMs && (
+          <button
+            className="pw-next-ms"
+            onClick={(e) => { e.stopPropagation(); onOpenTask(nextMs.id); }}
+            title={`次のマイルストーン: ${nextMs.name} (${fmtJP(nextMs.end)})`}>
+            <Icon name="flagSm" size={11}/>
+            <span className="pw-next-ms__name">{nextMs.name}</span>
+            <span className="pw-next-ms__date">{fmtJP(nextMs.end)}</span>
+          </button>
+        )}
         {!isPhase && (
           <button className="pw-tg-name__open"
             onClick={(e) => { e.stopPropagation(); onOpenTask(task.id); }}

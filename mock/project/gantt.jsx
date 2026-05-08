@@ -176,7 +176,9 @@ function GanttList({ tasks, collapsed, setCollapsed, onOpenTask, selectedId, set
         <div className="pw-col pw-col--asg">担当</div>
       </div>
       <div className="pw-gantt__list-body">
-        {tasks.map(t => (
+        {tasks.map(t => {
+          const nextMs = t.isPhase ? nextMilestoneFor(t.id, window.TASKS || [], TODAY) : null;
+          return (
           <div key={t.id}
             className={"pw-row" + (t.isPhase ? " pw-row--phase" : "") + (selectedId === t.id ? " pw-row--selected" : "") + (t.critical && !t.isPhase ? " pw-row--critical" : "")}
             onClick={() => onOpenTask(t.id)}
@@ -190,6 +192,16 @@ function GanttList({ tasks, collapsed, setCollapsed, onOpenTask, selectedId, set
               ) : <span className="pw-toggle pw-toggle--leaf">{t.milestone ? <Icon name="flagSm" size={12}/> : null}</span>}
               <span className="pw-row__name" title={t.name}>{t.name}</span>
               {t.critical && !t.isPhase && <span className="pw-tag pw-tag--critical">CP</span>}
+              {nextMs && (
+                <button
+                  className="pw-next-ms"
+                  onClick={(e) => { e.stopPropagation(); onOpenTask(nextMs.id); }}
+                  title={`次のマイルストーン: ${nextMs.name} (${fmtJP(nextMs.end)})`}>
+                  <Icon name="flagSm" size={11}/>
+                  <span className="pw-next-ms__name">{nextMs.name}</span>
+                  <span className="pw-next-ms__date">{fmtJP(nextMs.end)}</span>
+                </button>
+              )}
             </div>
             <div className="pw-col pw-col--dur">{t.isPhase ? `${daysBetween(t.start, t.end)+1}d` : `${t.duration}d`}</div>
             <div className="pw-col pw-col--start">{fmtJP(t.start)}</div>
@@ -198,7 +210,8 @@ function GanttList({ tasks, collapsed, setCollapsed, onOpenTask, selectedId, set
               {t.owner ? <PrimaryAvatar owner={t.owner} subs={t.subs} size={20} maxSubs={1} /> : <span className="pw-muted">—</span>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
