@@ -1,4 +1,4 @@
-// Date utilities and shared primitives for ProjectWeb
+// Date utilities and shared primitives for YuiPath
 
 const MS_DAY = 86400000;
 const parseDate = (s) => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
@@ -8,6 +8,67 @@ const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); ret
 const fmtJP = (s) => { const d = parseDate(s); return `${d.getMonth()+1}/${d.getDate()}`; };
 const fmtJPLong = (s) => { const d = parseDate(s); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; };
 const fmtMoney = (n) => "¥" + n.toLocaleString("ja-JP");
+
+// ─────────── Working-day arithmetic ───────────
+// All helpers accept either:
+//   - a `calendar` object: { workingDays: [bool×7 Sun..Sat], holidays: [{date, name}] }
+//   - a legacy holidays array: [{date,name}] or [ISOstrings] (assumes Mon-Fri working)
+//   - undefined: defaults to Mon-Fri, no holidays
+
+function _resolveCalendar(arg) {
+  if (!arg) {
+    return { workingDays: [false, true, true, true, true, true, false], holidaySet: new Set() };
+  }
+  if (Array.isArray(arg)) {
+    // legacy: holidays array, default Mon-Fri
+    return {
+      workingDays: [false, true, true, true, true, true, false],
+      holidaySet: new Set(arg.map(h => (typeof h === "string" ? h : h.date))),
+    };
+  }
+  // calendar object
+  return {
+    workingDays: arg.workingDays || [false, true, true, true, true, true, false],
+    holidaySet: new Set((arg.holidays || []).map(h => h.date)),
+  };
+}
+
+function isWorkingDay(date, calendar) {
+  const c = _resolveCalendar(calendar);
+  if (!c.workingDays[date.getDay()]) return false;
+  return !c.holidaySet.has(fmtDate(date));
+}
+
+// Inclusive count: workingDaysBetween("Mon", "Fri") = 5 (Mon-Fri standard).
+// Returns 0 if end < start.
+function workingDaysBetween(startIso, endIso, calendar) {
+  if (!startIso || !endIso) return 0;
+  const s = parseDate(startIso);
+  const e = parseDate(endIso);
+  if (s > e) return 0;
+  const c = _resolveCalendar(calendar);
+  let count = 0;
+  const d = new Date(s);
+  while (d <= e) {
+    if (isWorkingDay(d, c)) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
+// Advances `n` working days from start. n=0 returns start unchanged.
+// So `end = addWorkingDays(start, duration - 1)` when duration counts both endpoints.
+function addWorkingDays(startIso, n, calendar) {
+  const d = parseDate(startIso);
+  if (n <= 0) return fmtDate(d);
+  const c = _resolveCalendar(calendar);
+  let advanced = 0;
+  while (advanced < n) {
+    d.setDate(d.getDate() + 1);
+    if (isWorkingDay(d, c)) advanced++;
+  }
+  return fmtDate(d);
+}
 
 // Returns the "next milestone" task for a given phase id, given a task list
 // and a `today` ISO date. Picks the soonest upcoming milestone (end >= today);
@@ -25,6 +86,21 @@ function nextMilestoneFor(phaseId, tasks, todayIso) {
   return sorted[sorted.length - 1];
 }
 
+// Weighted progress across leaf tasks, weighted by working-day duration.
+// Phases are excluded — their progress would double-count their children.
+function computeOverallProgress(tasks) {
+  const leaves = (tasks || []).filter(t => !t.isPhase);
+  if (leaves.length === 0) return 0;
+  let totalW = 0, doneW = 0;
+  leaves.forEach(t => {
+    const w = Math.max(1, t.duration || 1);
+    totalW += w;
+    doneW += w * (t.progress || 0);
+  });
+  if (totalW === 0) return 0;
+  return Math.round((doneW / totalW) * 100);
+}
+
 // Relative time for comments / activity. Pinned to NOW for repeatable mock.
 function fmtRelativeTime(iso, nowIso) {
   if (!iso) return "";
@@ -38,6 +114,42 @@ function fmtRelativeTime(iso, nowIso) {
   // For older entries, fall back to absolute date
   const d = new Date(iso);
   return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+}
+
+// ─── YuiPath brand assets ───
+// Smile mark (3-bar Gantt face). Static for the topbar/auth, animated for
+// the About hero. Loaded as <img>; pure shapes so no font dependency.
+function YuiPathMark({ size = 28, animated = false, className = "" }) {
+  const src = animated ? "assets/yuipath-smile-animated.svg" : "assets/yuipath-smile-static.svg";
+  return <img src={src} width={size} height={size} alt="YuiPath" className={"pw-yp-mark " + className}/>;
+}
+
+// "YuiPath" wordmark. Inlined SVG (not <img>) so the document-loaded Nunito
+// is reachable — <img>-loaded SVGs are sandboxed from external fonts.
+// Colors are intentionally brand-fixed (not --accent themed) to keep the
+// mark consistent with the smile SVGs.
+//
+// viewBox is tightened to fit the actual letter glyphs (Nunito 800 caps run
+// roughly y=22..62, no descenders in "YuiPath"). The original SVG used
+// viewBox="0 0 220 80" with ~30 units of vertical whitespace, which made
+// the rendered text feel small even at substantial heights.
+function YuiPathWordmark({ height = 28, color = "#1E293B", accent = "#3B82F6" }) {
+  // Cropped viewBox: 0 22 178 42  (aspect ~4.24 : 1)
+  const width = Math.round(height * 178 / 42);
+  return (
+    <svg
+      width={width} height={height}
+      viewBox="0 22 178 42" fill="none"
+      role="img" aria-label="YuiPath"
+      className="pw-yp-wordmark">
+      <text
+        x="0" y="60"
+        fill={color}
+        style={{ fontFamily: "'Nunito', sans-serif", fontWeight: 800, fontSize: 48 }}>
+        Yui<tspan fill={accent}>Path</tspan>
+      </text>
+    </svg>
+  );
 }
 
 // Avatar bubble
@@ -157,6 +269,9 @@ function Icon({ name, size = 16, className }) {
     copy:        <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
     insert:      <><path d="M12 4v16" /><path d="M4 12h16" /><circle cx="12" cy="12" r="9" opacity="0.4" /></>,
     panelR:      <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /><path d="M18 9l2 3-2 3" /></>,
+    edit:        <><path d="M14 4l6 6-12 12H2v-6z" /><path d="M12 6l6 6" /></>,
+    globe:       <><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" /></>,
+    info:        <><circle cx="12" cy="12" r="9" /><path d="M12 8h0" /><path d="M11 12h1v5h1" /></>,
   };
   return (
     <svg className={"pw-icon " + (className||"")} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -247,6 +362,8 @@ function FilterDropdown({ label, icon, options, selected, onChange, placeholder 
 
 Object.assign(window, {
   parseDate, fmtDate, daysBetween, addDays, fmtJP, fmtJPLong, fmtMoney, fmtRelativeTime, MS_DAY,
-  nextMilestoneFor,
+  isWorkingDay, workingDaysBetween, addWorkingDays,
+  nextMilestoneFor, computeOverallProgress,
+  YuiPathMark, YuiPathWordmark,
   Avatar, AvatarStack, PrimaryAvatar, StatusPill, HealthDot, Icon, Progress, FilterDropdown,
 });

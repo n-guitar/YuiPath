@@ -98,8 +98,6 @@ function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
                 onClick={() => tweaks.setTweak("ganttZoom", k)}>{v.label}</button>
             ))}
           </div>
-          <button className="pw-icon-btn" title="エクスポート"><Icon name="download" size={16}/></button>
-          <span className="pw-divider-v" />
           <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
             <Icon name="plus" size={14}/> 新規タスク
           </button>
@@ -156,9 +154,7 @@ function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
         </div>
         <div className="pw-gantt__footer-stats">
           <span>表示中: {visibleTasks.length} / {tasks.length}</span>
-          <span>進捗: <strong>42%</strong></span>
-          <span>SPI: <strong style={{color:"#C57F1A"}}>0.89</strong></span>
-          <span>CPI: <strong style={{color:"#C57F1A"}}>0.95</strong></span>
+          <span>進捗: <strong>{computeOverallProgress(tasks)}%</strong></span>
         </div>
       </div>
     </div>

@@ -19,7 +19,8 @@ const CAL_DAY_HEAD_HEIGHT = 26;
 function CalendarScreen({ onOpenTask }) {
   const tasks = useTasks();
   useResources();
-  useProjects();   // re-render when current project's holidays change
+  useProjects();
+  useCalendars();   // re-render when the calendar template changes
 
   const [cursorDate, setCursorDate] = React.useState(parseDate(TODAY));
   const [ownerFilter, setOwnerFilter] = React.useState([]);
@@ -28,12 +29,13 @@ function CalendarScreen({ onOpenTask }) {
   const today = parseDate(TODAY);
   const monthLabel = `${cursorDate.getFullYear()}年 ${cursorDate.getMonth() + 1}月`;
 
-  // Lookup map: ISO date → holiday name. Read from the active project.
+  // Resolve the active project's calendar and build a holiday lookup
+  const calendar = getCalendarFor((window.PROJECTS || []).find(x => x.current));
   const holidayMap = React.useMemo(() => {
     const m = {};
-    (PROJECT.holidays || []).forEach(h => { m[h.date] = h.name; });
+    (calendar?.holidays || []).forEach(h => { m[h.date] = h.name; });
     return m;
-  }, [(PROJECT.holidays || []).length, cursorDate.getMonth()]);
+  }, [calendar?.id, (calendar?.holidays || []).length, cursorDate.getMonth()]);
 
   const filtered = React.useMemo(() => {
     const ownerSet = new Set(ownerFilter);
@@ -114,6 +116,7 @@ function CalendarScreen({ onOpenTask }) {
             month={cursorDate.getMonth()}
             today={today}
             holidayMap={holidayMap}
+            calendar={calendar}
             onOpenTask={onOpenTask}/>
         ))}
       </div>
@@ -121,7 +124,7 @@ function CalendarScreen({ onOpenTask }) {
   );
 }
 
-function CalendarWeek({ week, tasks, month, today, holidayMap, onOpenTask }) {
+function CalendarWeek({ week, tasks, month, today, holidayMap, calendar, onOpenTask }) {
   const weekStart = week[0];
   const weekEnd = week[6];
 
@@ -164,7 +167,8 @@ function CalendarWeek({ week, tasks, month, today, holidayMap, onOpenTask }) {
           const holidayName = holidayMap?.[iso];
           const isToday = d.getTime() === today.getTime();
           const isCurMonth = d.getMonth() === month;
-          const isWeekend = i === 0 || i === 6;
+          // "Weekend" = any day the calendar marks as non-working day-of-week
+          const isWeekend = calendar && !calendar.workingDays[d.getDay()];
           return (
             <div key={i}
               className={"pw-cal__day"

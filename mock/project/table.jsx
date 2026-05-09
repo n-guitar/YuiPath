@@ -197,13 +197,20 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
     const colDef = TABLE_COLUMNS[editing.col];
     if (!task) { setEditing(null); return; }
     let patch = {};
+    const calendar = getCalendarFor((window.PROJECTS || []).find(x => x.current));
     if (colDef.kind === "number") {
       const n = parseInt(val, 10);
-      if (!isNaN(n)) patch[colDef.key] = n;
+      if (!isNaN(n)) {
+        patch[colDef.key] = n;
+        // Editing duration → recompute end based on working days
+        if (colDef.key === "duration" && task.start) {
+          patch.end = addWorkingDays(task.start, Math.max(1, n) - 1, calendar);
+        }
+      }
     } else if (colDef.kind === "date") {
       patch[colDef.key] = val;
       // Snap the other endpoint if the new value would invert the range,
-      // then recompute duration (clamped to >= 0).
+      // then recompute duration in working days.
       const next = { ...task, ...patch };
       if (next.start && next.end && parseDate(next.start) > parseDate(next.end)) {
         if (colDef.key === "start") patch.end = val;
@@ -211,7 +218,7 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
       }
       const recomputed = { ...task, ...patch };
       if (recomputed.start && recomputed.end) {
-        patch.duration = Math.max(0, daysBetween(recomputed.start, recomputed.end));
+        patch.duration = Math.max(0, workingDaysBetween(recomputed.start, recomputed.end, calendar));
       }
     } else if (colDef.kind === "status") {
       patch.status = val;

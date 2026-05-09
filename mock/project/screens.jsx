@@ -321,7 +321,14 @@ function RiskAheadPanel({ milestones, onOpenTask }) {
 }
 
 // Weekly load per resource. Returns { [resourceId]: number[] }.
-// owner: 60% if there are subs, else 100%; subs share the remaining 40%.
+//
+// 仕様: 主担当タスクの占有率のみカウント (5 営業日 = 100%)。副担当は対象外。
+//   load[r][w] = Σ(主担当タスクの週内重複日数) ÷ 5
+//   100% = 1人分フル稼働 / 100%超過 = オーバーアロケート
+//
+// 副担当の貢献は別軸（リソースドロワーの「アサイン中タスク」一覧の件数）で
+// 表現する。重ねると「忙しさ」と「関与」が混ざって意味が曖昧になるため、
+// この指標は意図的に主担当だけに絞っている。
 function computeWeeklyLoad(weeks = 24, startDate = PROJECT.startDate) {
   const start = parseDate(startDate);
   const tasks = window.TASKS || [];
@@ -330,24 +337,16 @@ function computeWeeklyLoad(weeks = 24, startDate = PROJECT.startDate) {
   resources.forEach(r => { out[r.id] = new Array(weeks).fill(0); });
   tasks.forEach(t => {
     if (t.isPhase || !t.owner) return;
-    const involved = allAssignees(t);
-    if (involved.length === 0) return;
     const ts = parseDate(t.start);
     const te = parseDate(t.end);
     for (let w = 0; w < weeks; w++) {
-      const wStart = addDays(start, w*7);
-      const wEnd = addDays(start, w*7+7);
+      const wStart = addDays(start, w * 7);
+      const wEnd = addDays(start, w * 7 + 7);
       if (te < wStart || ts > wEnd) continue;
       const a = ts > wStart ? ts : wStart;
       const b = te < wEnd ? te : wEnd;
-      const overlap = Math.max(0, (b - a) / MS_DAY);
-      const totalLoad = overlap / 5;
-      const ownerShare = totalLoad * (t.subs && t.subs.length ? 0.6 : 1.0);
-      if (out[t.owner]) out[t.owner][w] += ownerShare;
-      if (t.subs && t.subs.length) {
-        const subShare = (totalLoad * 0.4) / t.subs.length;
-        t.subs.forEach(rid => { if (out[rid]) out[rid][w] += subShare; });
-      }
+      const overlapDays = Math.max(0, (b - a) / MS_DAY);
+      if (out[t.owner]) out[t.owner][w] += overlapDays / 5;
     }
   });
   return out;
@@ -370,6 +369,10 @@ function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource }) {
           <span className="pw-legend">
             <span className="pw-legend__item"><span className="pw-legend__sw" style={{background:"var(--accent)"}}/>稼働率</span>
             <span className="pw-legend__item"><span className="pw-legend__sw" style={{background:"#DC4C3F"}}/>過負荷</span>
+          </span>
+          <span className="pw-divider-v"/>
+          <span className="pw-formula" title="主担当タスクの週内重複日数を5で割った値（5営業日=100%）。100%超 = オーバーアロケート。副担当タスクは含まない。">
+            <span className="pw-muted">計算式:</span> 主担当タスクの週内重複日数 ÷ 5営業日
           </span>
         </div>
         <div className="pw-view-toolbar__right">
@@ -470,7 +473,6 @@ function ProjectsListScreen({ onSwitchProject, onEditProject, onCreateProject })
           <p className="pw-muted">参加中のプロジェクト {projects.length} 件</p>
         </div>
         <div className="pw-section-head__tools">
-          <button className="pw-btn pw-btn--ghost pw-btn--sm"><Icon name="upload" size={14}/> インポート (.mpp)</button>
           <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateProject}>
             <Icon name="plus" size={14}/> 新規プロジェクト
           </button>
@@ -560,19 +562,28 @@ function TaskDrawer({ taskId, scrollTo, scrollToCommentId, onClose, onDelete, as
     patch(p);
   };
 
-  // Date change recomputes duration. If the new value would invert the range
-  // (end < start), auto-snap the other endpoint so duration stays >= 0.
+  // Date / duration arithmetic uses the active project's calendar. If the
+  // user inverts the range, auto-snap the other endpoint.
+  const calendar = getCalendarFor((window.PROJECTS || []).find(x => x.current));
+
   const setDate = (key, val) => {
     const p = { [key]: val };
     const next = { ...t, ...p };
     if (next.start && next.end && parseDate(next.start) > parseDate(next.end)) {
-      if (key === "start") p.end = val;     // pulled end up to match
-      else p.start = val;                    // pushed start down to match
+      if (key === "start") p.end = val;
+      else p.start = val;
     }
     const recomputed = { ...t, ...p };
     if (recomputed.start && recomputed.end) {
-      p.duration = Math.max(0, daysBetween(recomputed.start, recomputed.end));
+      p.duration = Math.max(0, workingDaysBetween(recomputed.start, recomputed.end, calendar));
     }
+    patch(p);
+  };
+
+  const setDuration = (val) => {
+    const d = Math.max(1, Number(val) || 1);
+    const p = { duration: d };
+    if (t.start) p.end = addWorkingDays(t.start, d - 1, calendar);
     patch(p);
   };
 
@@ -673,7 +684,7 @@ function TaskDrawer({ taskId, scrollTo, scrollToCommentId, onClose, onDelete, as
               <div className="pw-duration">
                 <input type="number" min="1" className="pw-input pw-input--inline pw-input--num"
                   value={t.duration || 1}
-                  onChange={(e) => patch({ duration: Number(e.target.value) })}/>
+                  onChange={(e) => setDuration(e.target.value)}/>
                 <span className="pw-muted">営業日</span>
               </div>
             </PropRow>
@@ -1020,7 +1031,12 @@ function ResourceDrawer({ resourceId, onClose, onDelete, onOpenTask }) {
         </div>
 
         <div className="pw-drawer__section">
-          <h4 className="pw-h4">週次負荷（24週）</h4>
+          <h4 className="pw-h4">
+            週次負荷（24週）
+            <span className="pw-muted pw-h4__sub" title="主担当タスクの週内重複日数 ÷ 5営業日">
+              主担当タスクのみ・5営業日=100%
+            </span>
+          </h4>
           <div className="pw-res-mini-hist">
             {loads.map((v, i) => {
               const pct = Math.min(v, 1.5);
@@ -1088,7 +1104,7 @@ const HEALTH_LABEL = {
   "off-track": { label: "遅延", color: "#DC4C3F" },
 };
 
-function ProjectDrawer({ projectId, onClose, onDelete, onSwitchTo }) {
+function ProjectDrawer({ projectId, onClose, onDelete, onSwitchTo, onOpenSettings }) {
   useProjects();
   const p = (window.PROJECTS || []).find(x => x.id === projectId);
 
@@ -1197,6 +1213,14 @@ function ProjectDrawer({ projectId, onClose, onDelete, onSwitchTo }) {
             rows={4}/>
         </div>
 
+        <div className="pw-drawer__section">
+          <h4 className="pw-h4">稼働カレンダー</h4>
+          <CalendarPicker
+            calendarId={p.calendarId}
+            onChange={(id) => patch({ calendarId: id })}
+            onEditClick={() => onOpenSettings && onOpenSettings()}/>
+        </div>
+
         {/* Read-only: derived from tasks/resources at runtime in real impl */}
         <div className="pw-drawer__section">
           <h4 className="pw-h4">現在の状態 <span className="pw-muted">（タスクから自動算出）</span></h4>
@@ -1223,6 +1247,416 @@ function ProjectDrawer({ projectId, onClose, onDelete, onSwitchTo }) {
         </div>
       </aside>
     </>
+  );
+}
+
+// ─────────── Calendar picker (simple dropdown for ProjectDrawer) ───────────
+// Editing happens in the Settings screen, not here.
+const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
+
+function CalendarPicker({ calendarId, onChange, onEditClick }) {
+  const calendars = useCalendars();
+  return (
+    <div className="pw-cal-picker">
+      <div className="pw-cal-picker__head">
+        <select className="pw-select pw-select--inline pw-cal-picker__select"
+          value={calendarId || (calendars[0]?.id ?? "")}
+          onChange={(e) => onChange(e.target.value)}>
+          {calendars.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <button className="pw-btn pw-btn--ghost pw-btn--sm" onClick={onEditClick} title="設定でカレンダーを編集">
+          <Icon name="settings" size={12}/> 設定で編集
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────── Settings screen ───────────
+// Global settings (calendars, future: notifications, etc.). Reachable from
+// the sidebar foot. Two-pane layout: section nav (left) + content (right).
+
+function SettingsScreen({ initialFocusCalendarId, askDeleteCalendar, askDeleteHoliday }) {
+  // Sections defined as a small registry so future ones (notifications,
+  // members, integrations) plug in without restructuring the shell.
+  const sections = [
+    { key: "calendars", label: "カレンダー",       icon: "calendar" },
+    { key: "language",  label: "言語",             icon: "globe" },
+    { key: "about",     label: "YuiPath について", icon: "info" },
+  ];
+  const [active, setActive] = React.useState("calendars");
+
+  return (
+    <div className="pw-settings">
+      <div className="pw-settings__nav">
+        {sections.map(s => (
+          <button key={s.key}
+            className={"pw-settings__nav-item" + (active === s.key ? " is-active" : "")}
+            onClick={() => setActive(s.key)}>
+            <Icon name={s.icon} size={14}/>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <div className="pw-settings__content">
+        {active === "calendars" && (
+          <CalendarsSettings
+            initialFocusCalendarId={initialFocusCalendarId}
+            askDeleteCalendar={askDeleteCalendar}
+            askDeleteHoliday={askDeleteHoliday}/>
+        )}
+        {active === "language" && <LanguageSettings/>}
+        {active === "about"    && <AboutSettings/>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────── Language settings ───────────
+// Display-only in the mock — picking a language doesn't actually swap UI text,
+// it just shows where the surface lives.
+function LanguageSettings() {
+  const [lang, setLang] = React.useState("ja");
+  const options = [
+    { value: "ja", label: "日本語",   sub: "Japanese" },
+    { value: "en", label: "English",  sub: "英語" },
+  ];
+  return (
+    <div className="pw-about">
+      <div className="pw-about__head">
+        <h2 className="pw-h2">言語</h2>
+        <p className="pw-muted">アプリの表示言語を選択します。</p>
+      </div>
+      <div className="pw-lang__list">
+        {options.map(o => (
+          <button key={o.value}
+            className={"pw-lang__item" + (lang === o.value ? " is-active" : "")}
+            onClick={() => setLang(o.value)}>
+            <span className="pw-lang__check">
+              {lang === o.value && <Icon name="check" size={12}/>}
+            </span>
+            <div className="pw-lang__text">
+              <div className="pw-lang__name">{o.label}</div>
+              <div className="pw-lang__sub">{o.sub}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <p className="pw-about__note">
+        ※ モックでは選択を保存するだけで、実際の表示言語は切り替わりません。
+      </p>
+    </div>
+  );
+}
+
+// ─────────── About settings ───────────
+function AboutSettings() {
+  return (
+    <div className="pw-about">
+      <div className="pw-about__hero">
+        <YuiPathMark size={88} animated className="pw-about__hero-mark"/>
+        <div>
+          <YuiPathWordmark height={36}/>
+          <p className="pw-about__hero-sub">
+            シンプルに使える、オープンソースのプロジェクト管理ツール
+          </p>
+          <p className="pw-about__hero-meta">v0.1.0 (mock) · Apache License 2.0</p>
+        </div>
+      </div>
+
+      <section className="pw-about__section">
+        <h3 className="pw-about__h3">設計思想</h3>
+        <ul className="pw-about__list">
+          <li>
+            <strong>シンプルに、本質だけ。</strong>
+            <span>タスク・期間・進捗・依存関係。PM の核を扱い、機能の網羅性は追わない。</span>
+          </li>
+          <li>
+            <strong>正直な数字だけ出す。</strong>
+            <span>EVM や予測値など、データが揃わないと嘘になる指標は出さない。表示するのは実データから導けるものだけ。</span>
+          </li>
+          <li>
+            <strong>読める / 軽い UI。</strong>
+            <span>Notion ライクな柔らかいタイポと配色。データ密度は控えめ、必要な情報に視線を向けやすく。</span>
+          </li>
+          <li>
+            <strong>ローカルファースト。</strong>
+            <span>個人利用は Tauri デスクトップ（オフライン・データは手元）。チームは AWS バックエンドで同期。</span>
+          </li>
+          <li>
+            <strong>AI は外付け。</strong>
+            <span>コア製品は AI 依存ゼロ。必要なら MCP 経由で外部 AI と連携できる、という設計。</span>
+          </li>
+        </ul>
+      </section>
+
+      <section className="pw-about__section">
+        <h3 className="pw-about__h3">使い方</h3>
+        <ol className="pw-about__steps">
+          <li>
+            <span className="pw-about__step-num">1</span>
+            <div>
+              <strong>プロジェクトを作る</strong>
+              <span>左サイドバーの「プロジェクト」から新規作成、または「すべてのプロジェクト」から切替。</span>
+            </div>
+          </li>
+          <li>
+            <span className="pw-about__step-num">2</span>
+            <div>
+              <strong>タスクを並べる</strong>
+              <span>テーブル画面でフェーズ → タスクを追加。CSV インポートにも対応。</span>
+            </div>
+          </li>
+          <li>
+            <span className="pw-about__step-num">3</span>
+            <div>
+              <strong>ガントで日程を確認</strong>
+              <span>依存関係・クリティカルパス・マイルストーンを視覚化。バーをドラッグして調整（予定）。</span>
+            </div>
+          </li>
+          <li>
+            <span className="pw-about__step-num">4</span>
+            <div>
+              <strong>ダッシュボードでシグナルを拾う</strong>
+              <span>「要注意」パネルが遅延・期限超過・未割当などを自動で検出。</span>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section className="pw-about__section">
+        <h3 className="pw-about__h3">ライセンスと商標</h3>
+        <ul className="pw-about__meta-list">
+          <li><span className="pw-about__meta-key">ライセンス</span><span>Apache License 2.0</span></li>
+          <li><span className="pw-about__meta-key">著作権</span><span>Copyright © 2026 n-guitar</span></li>
+          <li><span className="pw-about__meta-key">商標</span><span>"YuiPath" は n-guitar の商標です（TRADEMARKS.md 参照）</span></li>
+        </ul>
+      </section>
+
+      <section className="pw-about__section pw-about__support">
+        <h3 className="pw-about__h3">プロジェクトを応援する</h3>
+        <p className="pw-about__support-lead">
+          YuiPath は無料・オープンソースで開発しています。役立っていれば、ぜひ応援を。
+        </p>
+        <div className="pw-about__cta-row">
+          <a className="pw-btn pw-btn--primary pw-btn--sm"
+             href="https://github.com/n-guitar/YuiPath"
+             target="_blank" rel="noopener noreferrer">
+            <span aria-hidden="true">⭐</span> Star on GitHub
+          </a>
+          <a className="pw-btn pw-btn--ghost pw-btn--sm"
+             href="https://github.com/n-guitar/YuiPath/issues"
+             target="_blank" rel="noopener noreferrer">
+            <Icon name="bolt" size={13}/> Issue を報告
+          </a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CalendarsSettings({ initialFocusCalendarId, askDeleteCalendar, askDeleteHoliday }) {
+  const calendars = useCalendars();
+  const projects = useProjects();
+  const [selectedId, setSelectedId] = React.useState(
+    initialFocusCalendarId || calendars[0]?.id || null
+  );
+
+  // Re-resolve when the calendars list changes (delete/add)
+  React.useEffect(() => {
+    if (!calendars.find(c => c.id === selectedId)) {
+      setSelectedId(calendars[0]?.id || null);
+    }
+  }, [calendars.length, selectedId]);
+
+  const cal = calendars.find(c => c.id === selectedId);
+  const usedByCount = cal ? projects.filter(p => p.calendarId === cal.id).length : 0;
+
+  const handleAdd = () => {
+    const id = addCalendar("新しいカレンダー");
+    setSelectedId(id);
+  };
+  const canDelete = cal && calendars.length > 1 && usedByCount === 0;
+  const handleDelete = () => {
+    if (!cal) return;
+    if (askDeleteCalendar) askDeleteCalendar(cal.id);
+    else if (canDelete) deleteCalendar(cal.id);
+  };
+
+  return (
+    <div className="pw-cal-settings">
+      <aside className="pw-cal-settings__list">
+        <div className="pw-cal-settings__list-head">
+          <h4 className="pw-h4">カレンダー</h4>
+          <button className="pw-icon-btn" onClick={handleAdd} title="新規カレンダー">
+            <Icon name="plus" size={14}/>
+          </button>
+        </div>
+        <ul className="pw-cal-settings__list-items">
+          {calendars.map(c => {
+            const used = projects.filter(p => p.calendarId === c.id).length;
+            return (
+              <li key={c.id}>
+                <button
+                  className={"pw-cal-settings__item" + (c.id === selectedId ? " is-active" : "")}
+                  onClick={() => setSelectedId(c.id)}>
+                  <span className="pw-cal-settings__item-name">{c.name}</span>
+                  <span className="pw-cal-settings__item-count">{used} プロジェクト</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </aside>
+
+      <div className="pw-cal-settings__editor">
+        {!cal && (
+          <div className="pw-empty">
+            <Icon name="calendar" size={28}/>
+            <div className="pw-empty__title">カレンダーがありません</div>
+            <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={handleAdd}>
+              <Icon name="plus" size={12}/> 新規カレンダー
+            </button>
+          </div>
+        )}
+        {cal && (
+          <>
+            <div className="pw-cal-settings__editor-head">
+              <input type="text" className="pw-cal-settings__name-input"
+                value={cal.name}
+                onChange={(e) => updateCalendar(cal.id, { name: e.target.value })}/>
+              <div className="pw-cal-settings__editor-tools">
+                {canDelete ? (
+                  <button className="pw-btn pw-btn--ghost pw-btn--sm" onClick={handleDelete}>
+                    <Icon name="trash" size={12}/> 削除
+                  </button>
+                ) : usedByCount > 0 ? (
+                  <span className="pw-muted pw-cal-settings__usage">
+                    {usedByCount} プロジェクトで使用中
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <CalendarTemplateEditor
+              calendar={cal}
+              usedByCount={usedByCount}
+              askDeleteHoliday={askDeleteHoliday}
+              embedded/>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CalendarTemplateEditor({ calendar: cal, usedByCount, embedded, askDeleteHoliday }) {
+  const [draftDate, setDraftDate] = React.useState("");
+  const [draftName, setDraftName] = React.useState("");
+
+  const toggleDay = (i) => {
+    const next = [...cal.workingDays];
+    next[i] = !next[i];
+    updateCalendar(cal.id, { workingDays: next });
+  };
+  // Upsert: if the date already exists, just update its name (so "追加" never
+  // silently fails when picking an existing date). Otherwise append.
+  const addHoliday = () => {
+    if (!draftDate) return;
+    const list = cal.holidays || [];
+    const name = draftName.trim() || "祝日";
+    const existing = list.find(h => h.date === draftDate);
+    const next = existing
+      ? list.map(h => h.date === draftDate ? { ...h, name } : h)
+      : [...list, { date: draftDate, name }];
+    updateCalendar(cal.id, { holidays: next });
+    setDraftDate(""); setDraftName("");
+  };
+  const removeHoliday = (date) => {
+    if (askDeleteHoliday) askDeleteHoliday(cal.id, date);
+    else updateCalendar(cal.id, { holidays: (cal.holidays || []).filter(h => h.date !== date) });
+  };
+
+  const sorted = [...(cal.holidays || [])].sort((a, b) => a.date < b.date ? -1 : 1);
+
+  return (
+    <div className="pw-cal-edit">
+      {usedByCount >= 1 && (
+        <div className="pw-cal-edit__warn">
+          ⚠️ このカレンダーは <strong>{usedByCount} プロジェクト</strong>で使用中です。
+          祝日の<strong>追加・削除・曜日変更</strong>はすべて、対象プロジェクトの今後のタスク日数計算に影響します。
+        </div>
+      )}
+
+      {!embedded && (
+        <div className="pw-cal-edit__row">
+          <label className="pw-cal-edit__label">名前</label>
+          <input type="text" className="pw-input pw-input--inline"
+            value={cal.name}
+            onChange={(e) => updateCalendar(cal.id, { name: e.target.value })}/>
+        </div>
+      )}
+
+      <div className="pw-cal-edit__row">
+        <label className="pw-cal-edit__label">稼働曜日</label>
+        <div className="pw-cal-edit__weekdays">
+          {WEEKDAY_NAMES.map((d, i) => (
+            <button key={i} type="button"
+              className={"pw-cal-edit__weekday"
+                + (cal.workingDays[i] ? " is-on" : "")
+                + (i === 0 ? " pw-cal-edit__weekday--sun" : "")
+                + (i === 6 ? " pw-cal-edit__weekday--sat" : "")}
+              onClick={() => toggleDay(i)}>
+              {d}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="pw-cal-edit__row">
+        <label className="pw-cal-edit__label">祝日・非稼働日 <span className="pw-muted">({sorted.length})</span></label>
+        <div className="pw-cal-edit__holidays">
+          {sorted.length === 0 && (
+            <div className="pw-muted pw-cal-edit__empty">登録された祝日はありません</div>
+          )}
+          {sorted.length > 0 && (
+            <ul className="pw-holidays__list">
+              {sorted.map(h => (
+                <li key={h.date} className="pw-holidays__item">
+                  <span className="pw-holidays__date">{fmtJP(h.date)}</span>
+                  <span className="pw-holidays__name">{h.name}</span>
+                  <button className="pw-icon-btn pw-icon-btn--sm" onClick={() => removeHoliday(h.date)} title="削除">
+                    <Icon name="close" size={12}/>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="pw-holidays__add">
+            <input type="date" className="pw-input pw-input--inline"
+              value={draftDate}
+              onChange={(e) => setDraftDate(e.target.value)}/>
+            <input type="text" className="pw-input pw-input--inline"
+              placeholder={draftDate && (cal.holidays || []).find(h => h.date === draftDate)
+                ? `現在: ${(cal.holidays || []).find(h => h.date === draftDate).name}`
+                : "名称（例: 創立記念日）"}
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}/>
+            {(() => {
+              const overwrite = draftDate && (cal.holidays || []).some(h => h.date === draftDate);
+              return (
+                <button
+                  className={"pw-btn pw-btn--sm " + (overwrite ? "pw-btn--ghost pw-cal-edit__overwrite" : "pw-btn--ghost")}
+                  onClick={addHoliday}
+                  disabled={!draftDate}>
+                  <Icon name={overwrite ? "edit" : "plus"} size={12}/>
+                  {overwrite ? "上書き" : "追加"}
+                </button>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1278,4 +1712,4 @@ function ConfirmDialog({ title, body, confirmLabel = "削除", destructive, onCo
   );
 }
 
-Object.assign(window, { DashboardScreen, ResourcesScreen, ProjectsListScreen, TaskDrawer, ResourceDrawer, ProjectDrawer, ConfirmDialog, computeWeeklyLoad });
+Object.assign(window, { DashboardScreen, ResourcesScreen, ProjectsListScreen, SettingsScreen, TaskDrawer, ResourceDrawer, ProjectDrawer, ConfirmDialog, computeWeeklyLoad });

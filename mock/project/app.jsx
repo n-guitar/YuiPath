@@ -33,6 +33,9 @@ function App() {
     document.documentElement.dataset.density = t.density;
   }, [t.primaryColor, t.density]);
 
+  // null = signed in. Otherwise one of "login" | "signup" | "forgot".
+  // Default starts signed-in so the demo lands on the work surface.
+  const [authView, setAuthView] = React.useState(null);
   const [view, setView] = React.useState("table");
   const [openTaskId, setOpenTaskId] = React.useState(null);
   // When set, the TaskDrawer scrolls this section into view on mount —
@@ -244,6 +247,64 @@ function App() {
     });
   };
 
+  const askDeleteCalendar = (id) => {
+    const c = (window.CALENDARS || []).find(x => x.id === id);
+    if (!c) return;
+    const usedBy = (window.PROJECTS || []).filter(p => p.calendarId === id).length;
+    askConfirm({
+      title: "カレンダーを削除しますか？",
+      body: (
+        <>
+          <p>「<strong>{c.name}</strong>」を削除します。</p>
+          {usedBy > 0 ? (
+            <p className="pw-confirm__warn">
+              ⚠️ {usedBy} プロジェクトで使用中です。先に各プロジェクトのカレンダーを別のものに変更してください。
+            </p>
+          ) : (
+            <p>このカレンダーはどのプロジェクトでも使われていません。安全に削除できます。</p>
+          )}
+        </>
+      ),
+      confirmLabel: usedBy > 0 ? "削除できません" : "削除",
+      destructive: true,
+      onConfirm: () => {
+        if (usedBy > 0) { closeConfirm(); return; }
+        deleteCalendar(id);
+        closeConfirm();
+      },
+    });
+  };
+
+  const askDeleteHoliday = (calendarId, date) => {
+    const c = (window.CALENDARS || []).find(x => x.id === calendarId);
+    if (!c) return;
+    const h = (c.holidays || []).find(x => x.date === date);
+    if (!h) return;
+    const usedBy = (window.PROJECTS || []).filter(p => p.calendarId === calendarId).length;
+    askConfirm({
+      title: "祝日を削除しますか？",
+      body: (
+        <>
+          <p>「<strong>{h.name}</strong>」（{h.date}）を「{c.name}」から削除します。</p>
+          {usedBy > 0 && (
+            <p className="pw-confirm__warn">
+              ⚠️ このカレンダーは <strong>{usedBy} プロジェクト</strong>で使用中です。
+              削除すると、その日が稼働日扱いとなり、今後のタスク日数計算に影響します。
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: "削除",
+      destructive: true,
+      onConfirm: () => {
+        updateCalendar(calendarId, {
+          holidays: (c.holidays || []).filter(x => x.date !== date),
+        });
+        closeConfirm();
+      },
+    });
+  };
+
   const askDeleteProject = (id) => {
     const p = (window.PROJECTS || []).find(x => x.id === id);
     if (!p) return;
@@ -271,9 +332,18 @@ function App() {
     });
   };
 
+  if (authView) {
+    return (
+      <AuthShell
+        view={authView}
+        onView={setAuthView}
+        onAuthenticated={() => setAuthView(null)}/>
+    );
+  }
+
   return (
     <div className={"pw-app" + (t.sidebarCollapsed ? " pw-app--collapsed" : "")}
-         data-screen-label="ProjectWeb">
+         data-screen-label="YuiPath">
       <Sidebar
         nav={NAV}
         active={showProjectsList ? null : view}
@@ -282,6 +352,17 @@ function App() {
         onToggle={() => setTweak("sidebarCollapsed", !t.sidebarCollapsed)}
         showProjectsList={showProjectsList}
         onShowProjectsList={() => { setShowProjectsList(true); closeTask(); }}
+        onSwitchProject={handleSwitchProject}
+        onCreateProject={openCreateProject}
+        onOpenSettings={() => { setView("settings"); setShowProjectsList(false); closeTask(); }}
+        onOpenProfile={() => { closeTask(); openResource(CURRENT_USER_ID); }}
+        onLogout={() => askConfirm({
+          title: "ログアウトしますか？",
+          body: <p>このセッションを終了します。未保存の変更は失われる可能性があります。</p>,
+          confirmLabel: "ログアウト",
+          destructive: true,
+          onConfirm: () => { closeConfirm(); setAuthView("login"); },
+        })}
       />
       <main className="pw-main">
         <Topbar
@@ -289,12 +370,16 @@ function App() {
           onToggleSidebar={() => setTweak("sidebarCollapsed", !t.sidebarCollapsed)}
           onProjectsClick={() => setShowProjectsList(true)}
           onProjectClick={() => setShowProjectsList(false)}
+          onOpenTask={openTask}
+          onOpenResource={openResource}
+          onSwitchProject={handleSwitchProject}
         />
         <div className={"pw-main__body" + (!showProjectsList && view === "dashboard" ? " pw-main__body--dash" : "")} data-screen-label={
           showProjectsList ? "Projects" :
           view === "dashboard" ? "Dashboard" :
           view === "gantt" ? "Gantt" :
           view === "calendar" ? "Calendar" :
+          view === "settings" ? "Settings" :
           view === "resources" ? "Resources" : view
         }>
           {showProjectsList && (
@@ -307,6 +392,7 @@ function App() {
           {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate} askDeleteTask={askDeleteTask} askConfirm={askConfirm} closeConfirm={closeConfirm}/>}
           {!showProjectsList && view === "gantt" &&     <GanttScreen tweaks={tweaks} onOpenTask={openTask} onCreateTask={openCreate} selectedId={openTaskId}/>}
           {!showProjectsList && view === "calendar" &&  <CalendarScreen onOpenTask={openTask}/>}
+          {!showProjectsList && view === "settings" &&  <SettingsScreen askDeleteCalendar={askDeleteCalendar} askDeleteHoliday={askDeleteHoliday}/>}
           {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask} onOpenResource={openResource} onCreateResource={openCreateResource}/>}
         </div>
       </main>
@@ -328,18 +414,48 @@ function App() {
         <ProjectDrawer projectId={openProjectId}
           onClose={closeProject}
           onDelete={askDeleteProject}
-          onSwitchTo={(id) => { closeProject(); handleSwitchProject(id); }}/>
+          onSwitchTo={(id) => { closeProject(); handleSwitchProject(id); }}
+          onOpenSettings={() => { closeProject(); setShowProjectsList(false); setView("settings"); }}/>
       )}
 
       {confirm && <ConfirmDialog {...confirm} onCancel={closeConfirm}/>}
 
-      <ProjectWebTweaks t={t} setTweak={setTweak}/>
+      <YuiPathTweaks t={t} setTweak={setTweak}/>
     </div>
   );
 }
 
 // ─────────── Sidebar ───────────
-function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, onShowProjectsList }) {
+function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, onShowProjectsList, onSwitchProject, onCreateProject, onOpenSettings, onOpenProfile, onLogout }) {
+  const projects = useProjects();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const switchRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e) => {
+      if (switchRef.current && !switchRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const handleSwitchClick = () => {
+    if (collapsed) onShowProjectsList();
+    else setMenuOpen(o => !o);
+  };
+  const handlePick = (id) => {
+    onSwitchProject(id);
+    setMenuOpen(false);
+  };
+  const handleShowAll = () => { setMenuOpen(false); onShowProjectsList(); };
+  const handleNew = () => { setMenuOpen(false); onCreateProject(); };
+
   return (
     <aside className="pw-sidebar">
       <div className="pw-sidebar__brand">
@@ -351,19 +467,8 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
           className="pw-brand"
           onClick={collapsed ? onToggle : undefined}
           title={collapsed ? "サイドバーを開く" : undefined}>
-          <div className="pw-brand__mark">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <rect x="3" y="6"  width="11" height="3" rx="1.5" fill="currentColor"/>
-              <rect x="6" y="11" width="13" height="3" rx="1.5" fill="currentColor" opacity="0.65"/>
-              <rect x="4" y="16" width="9"  height="3" rx="1.5" fill="currentColor" opacity="0.4"/>
-            </svg>
-          </div>
-          {!collapsed && (
-            <div className="pw-brand__text">
-              <div className="pw-brand__name">ProjectWeb</div>
-              <div className="pw-brand__sub">Acme Inc.</div>
-            </div>
-          )}
+          <YuiPathMark size={collapsed ? 28 : 36}/>
+          {!collapsed && <YuiPathWordmark height={26}/>}
         </button>
         {!collapsed && (
           <button className="pw-icon-btn pw-sidebar__toggle" onClick={onToggle} title="サイドバーを閉じる">
@@ -372,20 +477,51 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
         )}
       </div>
 
-      <button className="pw-project-switch" onClick={onShowProjectsList}>
-        {!collapsed ? (
-          <>
-            <div className="pw-project-switch__icon"><Icon name="folder" size={14}/></div>
-            <div className="pw-project-switch__body">
-              <div className="pw-project-switch__label">プロジェクト</div>
-              <div className="pw-project-switch__name">{PROJECT.name}</div>
+      <div className="pw-project-switch-wrap" ref={switchRef}>
+        <button
+          className={"pw-project-switch" + (menuOpen ? " is-open" : "")}
+          onClick={handleSwitchClick}>
+          {!collapsed ? (
+            <>
+              <div className="pw-project-switch__icon"><Icon name="folder" size={14}/></div>
+              <div className="pw-project-switch__body">
+                <div className="pw-project-switch__label">プロジェクト</div>
+                <div className="pw-project-switch__name">{PROJECT.name}</div>
+              </div>
+              <Icon name="chevronD" size={14}/>
+            </>
+          ) : (
+            <div className="pw-project-switch__icon" title={`プロジェクト: ${PROJECT.name}`}><Icon name="folder" size={16}/></div>
+          )}
+        </button>
+        {menuOpen && !collapsed && (
+          <div className="pw-project-menu" role="menu">
+            <div className="pw-project-menu__head">プロジェクトに切替</div>
+            <div className="pw-project-menu__list">
+              {projects.map(p => (
+                <button key={p.id}
+                  className={"pw-project-menu__item" + (p.current ? " is-current" : "")}
+                  onClick={() => handlePick(p.id)}>
+                  <span className="pw-project-menu__check">
+                    {p.current && <Icon name="check" size={12}/>}
+                  </span>
+                  <span className="pw-project-menu__name">{p.name || "(名称未設定)"}</span>
+                </button>
+              ))}
             </div>
-            <Icon name="chevronD" size={14}/>
-          </>
-        ) : (
-          <div className="pw-project-switch__icon"><Icon name="folder" size={14}/></div>
+            <div className="pw-project-menu__divider"/>
+            <button className="pw-project-menu__action" onClick={handleNew}>
+              <Icon name="plus" size={12}/>
+              <span>新規プロジェクト</span>
+            </button>
+            <button className="pw-project-menu__action" onClick={handleShowAll}>
+              <Icon name="folder" size={12}/>
+              <span>すべてのプロジェクトを表示</span>
+              <Icon name="chevronR" size={11}/>
+            </button>
+          </div>
         )}
-      </button>
+      </div>
 
       <nav className="pw-nav">
         {nav.map(n => (
@@ -397,26 +533,85 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
       </nav>
 
       <div className="pw-sidebar__foot">
-        <button className="pw-nav__item">
+        <button
+          className={"pw-nav__item" + (active === "settings" ? " pw-nav__item--active" : "")}
+          onClick={onOpenSettings}>
           <Icon name="settings" size={16}/>
           {!collapsed && <span>設定</span>}
         </button>
-        {!collapsed && (
-          <div className="pw-sidebar__user">
-            <Avatar resource={RESOURCES[0]} size={28}/>
-            <div>
-              <div className="pw-sidebar__user-name">{RESOURCES[0].name}</div>
-              <div className="pw-sidebar__user-role">{RESOURCES[0].role}</div>
-            </div>
-          </div>
-        )}
+        <UserMenu
+          collapsed={collapsed}
+          onOpenProfile={onOpenProfile}
+          onLogout={onLogout}/>
       </div>
     </aside>
   );
 }
 
+// ─────────── UserMenu (sidebar foot) ───────────
+function UserMenu({ collapsed, onOpenProfile, onLogout }) {
+  const me = (window.RESOURCES || []).find(r => r.id === CURRENT_USER_ID) || RESOURCES[0];
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const pick = (fn) => () => { setOpen(false); fn?.(); };
+
+  return (
+    <div className="pw-user-menu-wrap" ref={ref}>
+      <button
+        className={"pw-sidebar__user pw-sidebar__user--btn" + (collapsed ? " pw-sidebar__user--collapsed" : "") + (open ? " is-open" : "")}
+        onClick={() => setOpen(o => !o)}
+        title={collapsed ? `${me.name} · ${me.role}` : "アカウントメニュー"}>
+        <Avatar resource={me} size={28}/>
+        {!collapsed && (
+          <>
+            <div className="pw-sidebar__user-text">
+              <div className="pw-sidebar__user-name">{me.name}</div>
+              <div className="pw-sidebar__user-role">{me.role}</div>
+            </div>
+            <Icon name="chevronD" size={12}/>
+          </>
+        )}
+      </button>
+      {open && (
+        <div className={"pw-user-menu" + (collapsed ? " pw-user-menu--collapsed" : "")} role="menu">
+          <div className="pw-user-menu__head">
+            <Avatar resource={me} size={32}/>
+            <div className="pw-user-menu__head-text">
+              <div className="pw-user-menu__name">{me.name}</div>
+              <div className="pw-user-menu__email">{(me.enName || me.name).toLowerCase().replace(/\s+/g, ".")}@example.com</div>
+            </div>
+          </div>
+          <div className="pw-user-menu__divider"/>
+          <button className="pw-user-menu__item" onClick={pick(onOpenProfile)}>
+            <Icon name="users" size={14}/>
+            <span>プロフィール</span>
+          </button>
+          <div className="pw-user-menu__divider"/>
+          <button className="pw-user-menu__item pw-user-menu__item--danger" onClick={pick(onLogout)}>
+            <Icon name="close" size={14}/>
+            <span>ログアウト</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────── Topbar ───────────
-function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick }) {
+function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick, onOpenTask, onOpenResource, onSwitchProject }) {
   const titles = {
     "projects":  "プロジェクト",
     "dashboard": "ダッシュボード",
@@ -424,6 +619,7 @@ function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick }) {
     "gantt":     "ガントチャート",
     "calendar":  "カレンダー",
     "resources": "リソース管理",
+    "settings":  "設定",
   };
   return (
     <header className="pw-topbar">
@@ -441,29 +637,312 @@ function Topbar({ view, onToggleSidebar, onProjectsClick, onProjectClick }) {
         </div>
       </div>
       <div className="pw-topbar__right">
-        <div className="pw-search">
-          <Icon name="search" size={14}/>
-          <input className="pw-search__input" placeholder="プロジェクト全体を検索…"/>
-          <kbd className="pw-kbd">⌘K</kbd>
-        </div>
-        <button className="pw-icon-btn" title="プロジェクトを共有">
-          <Icon name="upload" size={16}/>
-        </button>
-        <button className="pw-icon-btn pw-icon-btn--badge" title="通知">
-          <Icon name="bell" size={16}/>
-          <span className="pw-badge"/>
-        </button>
+        <SearchOmnibox onOpenTask={onOpenTask} onOpenResource={onOpenResource} onSwitchProject={onSwitchProject}/>
+        <NotificationsButton onOpenTask={onOpenTask}/>
         <span className="pw-divider-v"/>
-        <div className="pw-topbar__avatars">
-          <AvatarStack ids={RESOURCES.slice(0,4).map(r=>r.id)} size={26}/>
-        </div>
+        <MembersButton onOpenResource={onOpenResource}/>
       </div>
     </header>
   );
 }
 
+// ─────────── SearchOmnibox (⌘K) ───────────
+function SearchOmnibox({ onOpenTask, onOpenResource, onSwitchProject }) {
+  const [q, setQ] = React.useState("");
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+        setOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { setOpen(false); inputRef.current?.blur(); } };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const ql = q.trim().toLowerCase();
+  const tasks = ql
+    ? (window.TASKS || []).filter(t => t.name?.toLowerCase().includes(ql)).slice(0, 6)
+    : [];
+  const projects = ql
+    ? (window.PROJECTS || []).filter(p => (p.name || "").toLowerCase().includes(ql) || (p.client || "").toLowerCase().includes(ql)).slice(0, 4)
+    : [];
+  const resources = ql
+    ? (window.RESOURCES || []).filter(r =>
+        (r.name || "").toLowerCase().includes(ql) ||
+        (r.enName || "").toLowerCase().includes(ql) ||
+        (r.role || "").toLowerCase().includes(ql)
+      ).slice(0, 4)
+    : [];
+  const total = tasks.length + projects.length + resources.length;
+
+  const close = () => { setOpen(false); setQ(""); };
+  const pickTask = (id) => { close(); onOpenTask?.(id); };
+  const pickResource = (id) => { close(); onOpenResource?.(id); };
+  const pickProject = (id) => { close(); onSwitchProject?.(id); };
+
+  return (
+    <div className="pw-search-wrap" ref={ref}>
+      <div className="pw-search">
+        <Icon name="search" size={14}/>
+        <input
+          ref={inputRef}
+          className="pw-search__input"
+          placeholder="タスク・プロジェクト・メンバーを検索…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}/>
+        <kbd className="pw-kbd">⌘K</kbd>
+      </div>
+      {open && (
+        <div className="pw-omnibox" role="listbox">
+          {!ql ? (
+            <div className="pw-omnibox__hint">
+              タスク名・プロジェクト名・メンバー名で横断検索
+            </div>
+          ) : total === 0 ? (
+            <div className="pw-omnibox__empty">「{q}」に一致する項目はありません</div>
+          ) : (
+            <>
+              {tasks.length > 0 && (
+                <div className="pw-omnibox__group">
+                  <div className="pw-omnibox__group-head">タスク</div>
+                  {tasks.map(t => {
+                    const owner = (window.RESOURCES || []).find(r => r.id === t.owner);
+                    return (
+                      <button key={t.id} className="pw-omnibox__item" onClick={() => pickTask(t.id)}>
+                        <Icon name={t.isPhase ? "folder" : (t.milestone ? "flagSm" : "check")} size={13}/>
+                        <span className="pw-omnibox__item-name">{t.name || "(名称未設定)"}</span>
+                        <span className="pw-omnibox__item-meta">
+                          {fmtJP(t.start)}–{fmtJP(t.end)}
+                          {owner && <> · {owner.name}</>}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {projects.length > 0 && (
+                <div className="pw-omnibox__group">
+                  <div className="pw-omnibox__group-head">プロジェクト</div>
+                  {projects.map(p => (
+                    <button key={p.id} className="pw-omnibox__item" onClick={() => pickProject(p.id)}>
+                      <Icon name="folder" size={13}/>
+                      <span className="pw-omnibox__item-name">{p.name || "(名称未設定)"}</span>
+                      {p.current && <span className="pw-omnibox__badge">現在</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {resources.length > 0 && (
+                <div className="pw-omnibox__group">
+                  <div className="pw-omnibox__group-head">メンバー</div>
+                  {resources.map(r => (
+                    <button key={r.id} className="pw-omnibox__item" onClick={() => pickResource(r.id)}>
+                      <Avatar resource={r} size={18}/>
+                      <span className="pw-omnibox__item-name">{r.name}</span>
+                      <span className="pw-omnibox__item-meta">{r.role}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────── NotificationsButton ───────────
+function NotificationsButton({ onOpenTask }) {
+  // Subscribe so unread state recomputes when comments change.
+  useComments();
+  const [open, setOpen] = React.useState(false);
+  // Track ids the user has dismissed in this session — there is no real
+  // server-side "read" state in the mock.
+  const [readIds, setReadIds] = React.useState(() => new Set());
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const notifs = buildNotifications();
+  const unreadCount = notifs.filter(n => !readIds.has(n.id)).length;
+
+  const pick = (n) => {
+    setReadIds(prev => new Set(prev).add(n.id));
+    setOpen(false);
+    if (n.taskId) onOpenTask?.(n.taskId);
+  };
+  const markAllRead = () => setReadIds(new Set(notifs.map(n => n.id)));
+
+  return (
+    <div className="pw-notif-wrap" ref={ref}>
+      <button
+        className={"pw-icon-btn" + (unreadCount > 0 ? " pw-icon-btn--badge" : "")}
+        onClick={() => setOpen(o => !o)}
+        title="通知">
+        <Icon name="bell" size={16}/>
+        {unreadCount > 0 && <span className="pw-badge"/>}
+      </button>
+      {open && (
+        <div className="pw-notif">
+          <div className="pw-notif__head">
+            <span className="pw-notif__title">通知</span>
+            {unreadCount > 0 && (
+              <button className="pw-notif__mark" onClick={markAllRead}>すべて既読</button>
+            )}
+          </div>
+          {notifs.length === 0 ? (
+            <div className="pw-notif__empty">新しい通知はありません</div>
+          ) : (
+            <div className="pw-notif__list">
+              {notifs.map(n => {
+                const unread = !readIds.has(n.id);
+                return (
+                  <button key={n.id}
+                    className={"pw-notif__item" + (unread ? " is-unread" : "")}
+                    onClick={() => pick(n)}>
+                    <span className="pw-notif__dot" aria-hidden="true"/>
+                    <Avatar resource={(window.RESOURCES || []).find(r => r.id === n.who)} size={24}/>
+                    <div className="pw-notif__body">
+                      <div className="pw-notif__text">{n.text}</div>
+                      <div className="pw-notif__time">{n.time}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Synthesize notifications for the mock — derive from comments (recent
+// comments by anyone other than CURRENT_USER mention "you should look")
+// and ACTIVITY entries that affect tasks where CURRENT_USER is owner.
+function buildNotifications() {
+  const me = CURRENT_USER_ID;
+  const comments = window.COMMENTS || [];
+  const tasks = window.TASKS || [];
+
+  const fromComments = comments
+    .filter(c => c.authorId !== me)
+    .slice(-5)
+    .reverse()
+    .map(c => {
+      const t = tasks.find(x => x.id === c.taskId);
+      const isMine = t && (t.owner === me || (t.subs || []).includes(me));
+      return {
+        id: "n-c-" + c.id,
+        who: c.authorId,
+        text: `${isMine ? "あなたのタスク" : ""}「${t?.name || "(タスク)"}」にコメント`,
+        time: fmtRelativeTime(c.createdAt),
+        taskId: c.taskId,
+        priority: isMine ? 1 : 2,
+      };
+    });
+
+  const fromActivity = (window.ACTIVITY || [])
+    .filter(a => a.who !== me)
+    .slice(0, 3)
+    .map(a => ({
+      id: "n-a-" + a.id,
+      who: a.who,
+      text: a.text,
+      time: a.time,
+      taskId: a.taskId,
+      priority: 3,
+    }));
+
+  return [...fromComments, ...fromActivity].sort((a, b) => a.priority - b.priority);
+}
+
+// ─────────── MembersButton ───────────
+function MembersButton({ onOpenResource }) {
+  const resources = useResources();
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="pw-members-wrap" ref={ref}>
+      <button
+        className={"pw-members__trigger" + (open ? " is-open" : "")}
+        onClick={() => setOpen(o => !o)}
+        title="プロジェクトメンバー">
+        <AvatarStack ids={resources.slice(0, 4).map(r => r.id)} size={26}/>
+      </button>
+      {open && (
+        <div className="pw-members">
+          <div className="pw-members__head">
+            <span>プロジェクトメンバー</span>
+            <span className="pw-members__count">{resources.length}名</span>
+          </div>
+          <div className="pw-members__list">
+            {resources.map(r => (
+              <button key={r.id} className="pw-members__item"
+                onClick={() => { setOpen(false); onOpenResource?.(r.id); }}>
+                <Avatar resource={r} size={28}/>
+                <div className="pw-members__text">
+                  <div className="pw-members__name">{r.name}</div>
+                  <div className="pw-members__role">{r.role}</div>
+                </div>
+                {r.id === CURRENT_USER_ID && (
+                  <span className="pw-members__self">自分</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────── Tweaks panel ───────────
-function ProjectWebTweaks({ t, setTweak }) {
+function YuiPathTweaks({ t, setTweak }) {
   return (
     <TweaksPanel title="Tweaks">
       <TweakSection label="カラー">

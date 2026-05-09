@@ -1,4 +1,4 @@
-// Mock data for ProjectWeb — ECサイトリニューアル
+// Mock data for YuiPath — ECサイトリニューアル
 
 // Pinned "today" for the demo. Used by detectors and any UI showing
 // time-relative data (overdue, upcoming milestones, etc.).
@@ -7,6 +7,37 @@ const NOW   = "2026-06-12T15:30:00";  // full timestamp for relative-time displa
 
 // Currently logged-in user (mock). In production this comes from auth.
 const CURRENT_USER_ID = "r1";
+
+// ─────────── Calendars (templates for working-day arithmetic) ───────────
+// Each calendar defines:
+//   - workingDays: which days of the week are working (Sun..Sat = 0..6)
+//   - holidays: specific dates that are non-working with a label
+// Projects pick a calendar via `calendarId`. Resources may override later.
+const CALENDARS = [
+  {
+    id: "cal-standard",
+    name: "標準カレンダー (日本)",
+    workingDays: [false, true, true, true, true, true, false],   // Mon-Fri
+    holidays: [
+      { date: "2026-04-29", name: "昭和の日" },
+      { date: "2026-05-03", name: "憲法記念日" },
+      { date: "2026-05-04", name: "みどりの日" },
+      { date: "2026-05-05", name: "こどもの日" },
+      { date: "2026-05-06", name: "振替休日" },
+      { date: "2026-07-20", name: "海の日" },
+      { date: "2026-08-11", name: "山の日" },
+      { date: "2026-09-21", name: "敬老の日" },
+      { date: "2026-09-22", name: "国民の休日" },
+      { date: "2026-09-23", name: "秋分の日" },
+    ],
+  },
+  {
+    id: "cal-24h",
+    name: "24時間カレンダー",
+    workingDays: [true, true, true, true, true, true, true],
+    holidays: [],
+  },
+];
 
 // Single source of truth for projects. Each entry is a full project object
 // (the previously-separate PROJECT and PROJECTS_LIST have been merged).
@@ -24,20 +55,8 @@ const PROJECTS = [
     progress: 0.42,
     health: "at-risk",
     members: 6,
+    calendarId: "cal-standard",
     current: true,
-    // 祝日（プロジェクト固有）。今は表示のみ。営業日計算への反映は次フェーズ。
-    holidays: [
-      { date: "2026-04-29", name: "昭和の日" },
-      { date: "2026-05-03", name: "憲法記念日" },
-      { date: "2026-05-04", name: "みどりの日" },
-      { date: "2026-05-05", name: "こどもの日" },
-      { date: "2026-05-06", name: "振替休日" },
-      { date: "2026-07-20", name: "海の日" },
-      { date: "2026-08-11", name: "山の日" },
-      { date: "2026-09-21", name: "敬老の日" },
-      { date: "2026-09-22", name: "国民の休日" },
-      { date: "2026-09-23", name: "秋分の日" },
-    ],
   },
   {
     id: "prj-mobile",
@@ -50,6 +69,7 @@ const PROJECTS = [
     progress: 0.78,
     health: "on-track",
     members: 4,
+    calendarId: "cal-standard",
   },
   {
     id: "prj-erp",
@@ -62,6 +82,7 @@ const PROJECTS = [
     progress: 0.15,
     health: "on-track",
     members: 8,
+    calendarId: "cal-standard",
   },
   {
     id: "prj-data",
@@ -74,6 +95,7 @@ const PROJECTS = [
     progress: 0.92,
     health: "on-track",
     members: 3,
+    calendarId: "cal-24h",
   },
   {
     id: "prj-brand",
@@ -86,6 +108,7 @@ const PROJECTS = [
     progress: 0.30,
     health: "off-track",
     members: 5,
+    calendarId: "cal-standard",
   },
 ];
 
@@ -250,6 +273,46 @@ function deleteProject(id) {
   });
 }
 
+// ─────────── Calendars store (same pattern as tasks/resources/projects) ───────────
+let _calendars = CALENDARS;
+const _calendarsSubs = new Set();
+const _calendarsSubscribe = (cb) => { _calendarsSubs.add(cb); return () => _calendarsSubs.delete(cb); };
+const _calendarsSnapshot = () => _calendars;
+function setCalendars(next) {
+  const arr = typeof next === "function" ? next(_calendars) : next;
+  _calendars = arr;
+  CALENDARS.length = 0;
+  CALENDARS.push(...arr);
+  window.CALENDARS = _calendars;
+  _calendarsSubs.forEach(cb => cb());
+}
+function updateCalendar(id, patch) {
+  setCalendars(prev => prev.map(c => c.id === id ? { ...c, ...(typeof patch === "function" ? patch(c) : patch) } : c));
+}
+function addCalendar(name = "新しいカレンダー") {
+  const id = "cal-" + Math.random().toString(36).slice(2, 7);
+  const c = {
+    id, name,
+    workingDays: [false, true, true, true, true, true, false],
+    holidays: [],
+  };
+  setCalendars(prev => [...prev, c]);
+  return id;
+}
+function deleteCalendar(id) {
+  setCalendars(prev => prev.filter(c => c.id !== id));
+}
+function useCalendars() {
+  return React.useSyncExternalStore(_calendarsSubscribe, _calendarsSnapshot);
+}
+
+// Lookup helper: given a project (or anything with .calendarId), return its
+// resolved calendar object. Falls back to the first available calendar.
+function getCalendarFor(project) {
+  const list = window.CALENDARS || CALENDARS;
+  return (project && list.find(c => c.id === project.calendarId)) || list[0];
+}
+
 // Comments per task. Flat list (no threaded replies in this mock).
 const COMMENTS = [
   { id: "c1", taskId: "t8", authorId: "r2", body: "DB設計レビュー結果を反映済みです。残るのはUIの最終確認のみ。", createdAt: "2026-06-12T11:20:00" },
@@ -396,13 +459,15 @@ function downloadCsv(filename, text) {
 
 // Initial mirror so the PROJECT/PROJECTS_KPIS Proxies can find the array.
 window.PROJECTS = PROJECTS;
+window.CALENDARS = CALENDARS;
 
 Object.assign(window, {
-  PROJECT, PROJECT_KPIS, RESOURCES, TASKS, PROJECTS, ACTIVITY, COMMENTS, TODAY, NOW, CURRENT_USER_ID, allAssignees,
+  PROJECT, PROJECT_KPIS, RESOURCES, TASKS, PROJECTS, ACTIVITY, COMMENTS, CALENDARS, TODAY, NOW, CURRENT_USER_ID, allAssignees,
   useTasks, setTasks, updateTask,
   useResources, setResources, updateResource, RESOURCE_COLORS,
   useProjects, setProjects, updateProject, switchToProject, deleteProject,
   useComments, setComments, addComment, updateComment, deleteComment,
+  useCalendars, setCalendars, updateCalendar, addCalendar, deleteCalendar, getCalendarFor,
   STATUSES, STATUS_BY_VALUE,
   tasksToCsv, csvToTasks, downloadCsv, CSV_COLS,
 });

@@ -1,4 +1,4 @@
-/* ProjectWeb — Notion-like, soft, readable */
+/* YuiPath — Notion-like, soft, readable */
 
 :root {
   --bg:           #FBFBFA;
@@ -33,9 +33,13 @@
   --shadow-2: 0 4px 12px rgba(20,20,20,0.06), 0 1px 3px rgba(20,20,20,0.04);
   --shadow-3: 0 12px 28px rgba(20,20,20,0.10), 0 4px 8px rgba(20,20,20,0.05);
 
-  --font-sans: "IBM Plex Sans", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
-  --font-serif:"Instrument Serif", "Noto Serif JP", Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* GitHub-style system font stack — no web font loading. Each OS picks
+     its own native font (SF on macOS, Segoe UI on Windows, Roboto on
+     Android). JP fallbacks (Hiragino / Yu Gothic / Noto) ensure JP
+     glyphs render with the OS-native JP system font. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "Noto Sans CJK JP", Helvetica, Arial, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   --row-h: 32px;
   --gantt-list-w: 460px;
@@ -59,8 +63,8 @@ body {
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
-  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 button { font: inherit; color: inherit; cursor: pointer; }
 
@@ -99,8 +103,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 14px 10px;
-  min-height: 56px;
+  /* Match the topbar height (--topbar-h: 56px) so the bottom edge of the
+     brand area aligns with the topbar's bottom edge to the right. */
+  padding: 10px 14px;
+  height: var(--topbar-h);
+  box-sizing: border-box;
 }
 .pw-brand {
   display: flex; align-items: center; gap: 10px;
@@ -110,17 +117,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font: inherit; color: inherit; text-align: left;
   cursor: default;
 }
-.pw-brand__mark {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent), #000 18%));
-  color: white;
-  display: grid; place-items: center;
-  flex-shrink: 0;
-}
-.pw-brand__text { min-width: 0; }
-.pw-brand__name { font-weight: 600; font-size: 14px; line-height: 1.1; letter-spacing: -0.01em; }
-.pw-brand__sub  { font-size: 11px; color: var(--text-tertiary); }
+/* Brand mark: SVG image, no chrome around it (the SVG itself has color). */
+.pw-yp-mark { display: block; flex-shrink: 0; }
+.pw-yp-wordmark { display: block; }
 .pw-sidebar__toggle {
   flex-shrink: 0;
   opacity: 0.65;
@@ -142,10 +141,32 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-app--collapsed .pw-brand:hover .pw-brand__mark {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
+/* Collapsed: drop the card styling so the switcher reads as just another
+   nav icon. The wrap below provides the same horizontal inset as .pw-nav. */
+.pw-app--collapsed .pw-project-switch-wrap {
+  padding: 0 8px 4px;
+}
 .pw-app--collapsed .pw-project-switch {
-  margin: 4px 8px 12px;
-  padding: 6px;
+  margin: 0;
+  padding: 8px 0;
   justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  border-radius: var(--radius-sm);
+}
+.pw-app--collapsed .pw-project-switch:hover {
+  background: var(--surface-3);
+  box-shadow: none;
+}
+.pw-app--collapsed .pw-project-switch.is-open {
+  background: var(--surface-3);
+  box-shadow: none;
+}
+.pw-app--collapsed .pw-project-switch__icon {
+  /* Drop the inner accent square — just a plain icon to match nav items */
+  width: auto; height: auto;
+  background: transparent;
+  color: var(--text-2);
 }
 .pw-app--collapsed .pw-nav__item {
   justify-content: center;
@@ -155,17 +176,28 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-project-switch {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;
-  margin: 4px 8px 12px;
+  /* width:100% + box-sizing:border-box so the button fills the wrap's
+     content area exactly, matching .pw-nav__item--active (which uses the
+     same width:100% approach). The wrap supplies the 8px horizontal
+     spacing via its own padding, mirroring .pw-nav's `padding: 0 8px`. */
+  width: 100%;
+  box-sizing: border-box;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  box-shadow: var(--shadow-1);
+  border-radius: var(--radius-sm);
   text-align: left;
-  transition: background 0.1s;
+  transition: background 0.1s, box-shadow 0.1s;
 }
-.pw-project-switch:hover { background: var(--surface); border-color: var(--border-strong); }
+.pw-project-switch:hover { box-shadow: var(--shadow-2); }
+.pw-project-switch.is-open {
+  /* "Open" state: stronger glow that's deliberately distinct, even at the
+     cost of being slightly wider than the closed state. */
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-1);
+}
 .pw-project-switch__icon {
   width: 26px; height: 26px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--accent-soft);
   color: var(--accent);
   display: grid; place-items: center;
@@ -175,6 +207,89 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-project-switch__label { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
 .pw-project-switch__name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Quick-switch dropdown — width matches the project-switch button above
+   (both use 8px inset from sidebar edges) so the menu lines up cleanly. */
+.pw-project-switch-wrap {
+  position: relative;
+  /* No top padding so the button's top edge aligns with the topbar's
+     bottom edge (the brand area above is exactly --topbar-h tall). */
+  padding: 0 8px 12px;
+}
+.pw-project-menu {
+  position: absolute;
+  /* `top: 0` of the project-switch button = wrap top + 4px (its margin-top).
+     The button height is ~50px, so the menu sits just below. */
+  top: calc(100% - 8px);   /* nudge upward to align with button bottom (margin-bottom 12px) */
+  left: 8px; right: 8px;
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  z-index: 100;
+  padding: 4px;
+  display: flex; flex-direction: column;
+  gap: 1px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.pw-project-menu__head {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 6px 10px 4px;
+  font-weight: 600;
+}
+.pw-project-menu__list {
+  display: flex; flex-direction: column;
+  gap: 1px;
+}
+.pw-project-menu__item {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  min-width: 0;
+}
+.pw-project-menu__item:hover { background: var(--surface-2); }
+.pw-project-menu__item.is-current { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.pw-project-menu__check {
+  display: grid; place-items: center;
+  color: var(--accent);
+}
+.pw-project-menu__name {
+  font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.pw-project-menu__divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 4px 6px;
+}
+.pw-project-menu__action {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+}
+.pw-project-menu__action:hover { background: var(--surface-2); color: var(--text); }
+.pw-project-menu__action > .pw-icon:last-child { margin-left: auto; color: var(--text-tertiary); }
+
 .pw-nav {
   display: flex;
   flex-direction: column;
@@ -182,6 +297,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 1px;
 }
 .pw-nav__item {
+  /* `<button>` の `width: auto` は div と違ってコンテンツ幅を取るため、
+     親 (.pw-nav) を埋めない。明示的に 100% を指定する必要がある。
+     box-sizing: border-box は :root の `*` セレクタで既に適用済。 */
+  width: 100%;
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px;
   border: 0;
@@ -278,6 +397,273 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .pw-topbar__avatars { padding: 0 4px; }
 
+/* ─────────── Topbar: SearchOmnibox (⌘K) ─────────── */
+.pw-search-wrap { position: relative; }
+.pw-omnibox {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 380px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  z-index: 200;
+  padding: 6px;
+}
+.pw-omnibox__hint,
+.pw-omnibox__empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.pw-omnibox__group + .pw-omnibox__group { margin-top: 4px; }
+.pw-omnibox__group-head {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 8px 10px 4px;
+  font-weight: 600;
+}
+.pw-omnibox__item {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  min-width: 0;
+}
+.pw-omnibox__item:hover { background: var(--surface-2); }
+.pw-omnibox__item .pw-icon { color: var(--text-tertiary); flex-shrink: 0; }
+.pw-omnibox__item-name {
+  flex: 1; min-width: 0;
+  font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-omnibox__item-meta {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.pw-omnibox__badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ─────────── Topbar: Notifications ─────────── */
+.pw-notif-wrap { position: relative; }
+.pw-notif {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 360px;
+  max-height: 480px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  z-index: 200;
+}
+.pw-notif__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pw-notif__title { font-size: 13px; font-weight: 600; color: var(--text); }
+.pw-notif__mark {
+  border: 0; background: transparent;
+  font-size: 12px; color: var(--accent);
+  padding: 2px 4px; border-radius: 4px;
+  font: inherit;
+}
+.pw-notif__mark:hover { background: var(--accent-soft); }
+.pw-notif__empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.pw-notif__list {
+  display: flex; flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+}
+.pw-notif__item {
+  display: grid;
+  grid-template-columns: 8px 24px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  min-width: 0;
+}
+.pw-notif__item:hover { background: var(--surface-2); }
+.pw-notif__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+.pw-notif__item.is-unread .pw-notif__dot { background: var(--accent); }
+.pw-notif__body { min-width: 0; }
+.pw-notif__text {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.pw-notif__item:not(.is-unread) .pw-notif__text { color: var(--text-2); }
+.pw-notif__time { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* ─────────── Topbar: Members popover ─────────── */
+.pw-members-wrap { position: relative; }
+.pw-members__trigger {
+  display: flex; align-items: center;
+  padding: 0 4px;
+  border: 0; background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.pw-members__trigger:hover { background: var(--surface-3); }
+.pw-members__trigger.is-open { background: var(--surface-3); }
+.pw-members {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+  max-height: 420px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  z-index: 200;
+}
+.pw-members__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px; font-weight: 600;
+}
+.pw-members__count { font-size: 11.5px; color: var(--text-tertiary); font-weight: 400; }
+.pw-members__list {
+  display: flex; flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+}
+.pw-members__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  min-width: 0;
+}
+.pw-members__item:hover { background: var(--surface-2); }
+.pw-members__text { flex: 1; min-width: 0; }
+.pw-members__name {
+  font-size: 13px; font-weight: 500; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-members__role { font-size: 11.5px; color: var(--text-tertiary); margin-top: 1px; }
+.pw-members__self {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ─────────── Sidebar: UserMenu ─────────── */
+.pw-user-menu-wrap { position: relative; }
+.pw-sidebar__user--btn {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px;
+  border: 0; background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.pw-sidebar__user--btn:hover { background: var(--surface-3); }
+.pw-sidebar__user--btn.is-open { background: var(--surface-3); }
+.pw-sidebar__user--collapsed { justify-content: center; padding: 6px; }
+.pw-sidebar__user-text { flex: 1; min-width: 0; }
+.pw-sidebar__user--btn .pw-icon { color: var(--text-tertiary); flex-shrink: 0; }
+.pw-user-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px; right: 8px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  z-index: 100;
+  padding: 4px;
+  display: flex; flex-direction: column;
+}
+.pw-user-menu--collapsed {
+  left: calc(var(--sidebar-w-collapsed) - 4px);
+  right: auto;
+  width: 240px;
+  bottom: 8px;
+}
+.pw-user-menu__head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 8px;
+}
+.pw-user-menu__head-text { min-width: 0; flex: 1; }
+.pw-user-menu__name { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.pw-user-menu__email {
+  font-size: 11px; color: var(--text-tertiary); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-user-menu__divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 4px 6px;
+}
+.pw-user-menu__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.pw-user-menu__item:hover { background: var(--surface-2); color: var(--text); }
+.pw-user-menu__item .pw-icon { color: var(--text-tertiary); }
+.pw-user-menu__item--danger { color: var(--critical); }
+.pw-user-menu__item--danger:hover { background: var(--critical-soft); color: var(--critical); }
+.pw-user-menu__item--danger .pw-icon { color: var(--critical); }
+
 /* ─────────── Buttons ─────────── */
 .pw-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -356,6 +742,456 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   opacity: 0.85;
+}
+
+/* Formula caption (resources screen toolbar) */
+.pw-formula {
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 4px;
+  cursor: help;
+}
+
+/* Section sub-label inside h4 (e.g. drawer "週次負荷" with formula hint) */
+.pw-h4__sub {
+  font-weight: normal;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+/* ─────────── Calendar picker (ProjectDrawer) ─────────── */
+.pw-cal-picker { display: flex; flex-direction: column; gap: 12px; }
+.pw-cal-picker__head { display: flex; gap: 6px; align-items: center; }
+.pw-cal-picker__select { flex: 1; min-width: 0; }
+
+/* ─────────── Settings screen (sidebar foot → 設定) ─────────── */
+.pw-settings {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+}
+.pw-settings__nav {
+  display: flex; flex-direction: column;
+  gap: 1px;
+  padding: 16px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.pw-settings__nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.pw-settings__nav-item:hover { background: var(--surface-3); color: var(--text); }
+.pw-settings__nav-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.pw-settings__content {
+  padding: 24px 32px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ─────────── About / Language settings ─────────── */
+.pw-about {
+  max-width: 720px;
+  display: flex; flex-direction: column;
+  gap: 28px;
+}
+.pw-about__head h2 { margin-bottom: 4px; }
+
+.pw-about__hero {
+  display: flex; align-items: center; gap: 20px;
+  padding: 24px 26px;
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--accent-soft) 50%, transparent));
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 80%);
+}
+.pw-about__hero-mark { flex-shrink: 0; }
+.pw-about__hero-sub {
+  font-size: 13.5px;
+  color: var(--text-2);
+  margin: 6px 0 4px;
+  line-height: 1.5;
+}
+.pw-about__hero-meta {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin: 0;
+  font-family: var(--font-mono);
+}
+
+.pw-about__section { display: flex; flex-direction: column; gap: 12px; }
+.pw-about__h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.pw-about__list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pw-about__list li {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.pw-about__list li strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pw-about__list li span {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.pw-about__steps {
+  list-style: none;
+  margin: 0; padding: 0;
+  counter-reset: steps;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pw-about__steps > li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.pw-about__step-num {
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+.pw-about__steps > li > div {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pw-about__steps > li strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pw-about__steps > li span {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.pw-about__meta-list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.pw-about__meta-list li {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pw-about__meta-list li:last-child { border-bottom: 0; }
+.pw-about__meta-key {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.pw-about__support-lead {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.55;
+}
+.pw-about__cta-row {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pw-about__note {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* Language picker */
+.pw-lang__list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+}
+.pw-lang__item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.pw-lang__item:hover { background: var(--surface-3); }
+.pw-lang__item.is-active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent), transparent 70%);
+}
+.pw-lang__check {
+  display: grid; place-items: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.pw-lang__item.is-active .pw-lang__check {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.pw-lang__name {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.pw-lang__sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+/* Calendar settings two-pane: list / editor */
+.pw-cal-settings {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
+  height: 100%;
+}
+.pw-cal-settings__list {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.pw-cal-settings__list-head {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.pw-cal-settings__list-head .pw-h4 { margin: 0; }
+.pw-cal-settings__list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex; flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.pw-cal-settings__item {
+  display: flex; flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pw-cal-settings__item:last-child { border-bottom: 0; }
+.pw-cal-settings__item:hover { background: var(--surface-2); }
+.pw-cal-settings__item.is-active {
+  background: var(--accent-soft);
+}
+.pw-cal-settings__item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.pw-cal-settings__item.is-active .pw-cal-settings__item-name { color: var(--accent); }
+.pw-cal-settings__item-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.pw-cal-settings__editor {
+  display: flex; flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.pw-cal-settings__editor-head {
+  display: flex; gap: 12px; align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.pw-cal-settings__name-input {
+  flex: 1;
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  transition: background .12s, border-color .12s;
+}
+.pw-cal-settings__name-input:hover { background: var(--surface-2); }
+.pw-cal-settings__name-input:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.pw-cal-settings__editor-tools { display: flex; gap: 6px; align-items: center; }
+.pw-cal-settings__usage { font-size: 11.5px; }
+
+.pw-cal-edit {
+  display: flex; flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.pw-cal-edit__warn {
+  background: var(--warn-soft);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 4px 4px 0;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--text);
+}
+.pw-cal-edit__row {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.pw-cal-edit__label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+.pw-cal-edit__weekdays {
+  display: flex;
+  gap: 4px;
+}
+.pw-cal-edit__weekday {
+  flex: 1;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.pw-cal-edit__weekday:hover { border-color: var(--accent); }
+.pw-cal-edit__weekday.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.pw-cal-edit__weekday--sun { color: var(--critical); }
+.pw-cal-edit__weekday--sat { color: var(--accent); }
+.pw-cal-edit__weekday--sun.is-on { background: var(--critical-soft); border-color: var(--critical); color: var(--critical); }
+
+.pw-cal-edit__holidays { display: flex; flex-direction: column; gap: 6px; }
+.pw-cal-edit__empty {
+  font-size: 12.5px;
+  padding: 4px 0;
+}
+/* Overwrite-mode button: warm tint to flag the destructive replacement */
+.pw-cal-edit__overwrite {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.pw-cal-edit__overwrite:hover { background: color-mix(in srgb, var(--warn) 20%, var(--surface)); }
+
+/* ─────────── Holiday list (shared with calendar editor) ─────────── */
+.pw-help-text {
+  font-size: 11.5px;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+.pw-holidays { display: flex; flex-direction: column; gap: 8px; }
+.pw-holidays__empty {
+  font-size: 12.5px;
+  padding: 6px 0;
+}
+.pw-holidays__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex; flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.pw-holidays__item {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.pw-holidays__item:hover { background: var(--surface-2); }
+.pw-holidays__date {
+  font-variant-numeric: tabular-nums;
+  color: var(--critical);
+  font-weight: 600;
+}
+.pw-holidays__name { color: var(--text); }
+.pw-holidays__add {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+.pw-icon-btn--sm {
+  width: 22px; height: 22px;
 }
 
 /* ─────────── Calendar (month) view ─────────── */
@@ -853,7 +1689,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 /* ─────────── Headings ─────────── */
-.pw-h1 { font-family: var(--font-serif); font-weight: 400; font-size: 32px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+.pw-h1 { font-family: var(--font-display); font-weight: 600; font-size: 28px; line-height: 1.25; margin: 0; letter-spacing: -0.011em; }
 .pw-h2 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 .pw-h3 { font-size: 14.5px; font-weight: 600; margin: 0; }
 .pw-h4 { font-size: 12.5px; font-weight: 600; margin: 0 0 10px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -2838,3 +3674,196 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--surface);
   border-color: transparent;
 }
+
+/* ─────────── Auth screens (Login / Signup / Forgot) ─────────── */
+.pw-auth {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(1200px 500px at 50% -10%, var(--accent-soft) 0%, transparent 60%),
+    var(--bg);
+}
+.pw-auth__card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-3);
+  padding: 32px 32px 28px;
+  display: flex; flex-direction: column;
+  gap: 18px;
+}
+.pw-auth__brand {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin: 4px 0 12px;
+}
+
+.pw-auth__form {
+  display: flex; flex-direction: column;
+  gap: 14px;
+}
+.pw-auth__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.pw-auth__subtitle {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: -10px 0 4px;
+}
+
+.pw-auth__field {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.pw-auth__field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.pw-auth__field-label-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+}
+.pw-auth__field input[type="email"],
+.pw-auth__field input[type="password"],
+.pw-auth__field input[type="text"] {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.1s, box-shadow 0.1s;
+}
+.pw-auth__field input::placeholder { color: var(--muted); }
+.pw-auth__field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.pw-auth__hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.pw-auth__error {
+  font-size: 11.5px;
+  color: var(--critical);
+}
+
+.pw-auth__pw-wrap {
+  position: relative;
+}
+.pw-auth__pw-toggle {
+  position: absolute;
+  top: 50%; right: 8px;
+  transform: translateY(-50%);
+  border: 0; background: transparent;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pw-auth__pw-toggle:hover { background: var(--surface-3); color: var(--text); }
+
+.pw-auth__check {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.pw-auth__check input[type="checkbox"] {
+  margin: 2px 0 0;
+  width: 14px; height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.pw-auth__check--inline {
+  font-size: 12.5px;
+  align-items: center;
+}
+.pw-auth__check a { color: var(--accent); text-decoration: none; }
+.pw-auth__check a:hover { text-decoration: underline; }
+
+.pw-auth__submit {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+.pw-auth__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pw-auth__alt {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+.pw-auth__link {
+  border: 0; background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.pw-auth__link:hover { background: var(--accent-soft); }
+.pw-auth__link--inline {
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.pw-auth__sent {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px;
+  background: var(--success-soft);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--success), transparent 75%);
+}
+.pw-auth__sent-icon {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  background: var(--success);
+  color: white;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pw-auth__sent-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.pw-auth__sent-hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.pw-auth__foot {
+  margin-top: 18px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  display: flex; align-items: center; gap: 8px;
+}
+.pw-auth__foot a {
+  color: var(--text-tertiary);
+  text-decoration: none;
+}
+.pw-auth__foot a:hover { color: var(--text-2); text-decoration: underline; }
+.pw-auth__foot-sep { color: var(--muted); }
