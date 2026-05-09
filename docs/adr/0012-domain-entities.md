@@ -2,7 +2,8 @@
 
 - Status: Proposed
 - Date: 2026-05-09
-- Refines: ADR-0010, ADR-0011
+- Updated: 2026-05-09 (ADR-0013 によるアーキテクチャリセットを反映、Python 表現に調整)
+- Related: ADR-0013 (現行のアーキテクチャ), ADR-0011 (ロールと権限)
 - Source: `mock/project/data.jsx` および mock 実装全体を「製品 UX 仕様」として扱う
 
 ## Context
@@ -24,7 +25,7 @@ mock 分析（2026-05-09）で以下が判明:
    - project / event / inline にはない
 
 4. **Phase / Milestone は Task の flag で表現され、別エンティティではない**
-   - `isPhase: bool`、`milestone: bool`
+   - `is_phase: bool`、`milestone: bool`
 
 5. **Predecessor は Task の自己参照配列、別エンティティではない**
    - FS (Finish-Start) のみ、SS/FF/SF や lead/lag はやらない
@@ -41,7 +42,7 @@ mock 分析（2026-05-09）で以下が判明:
 
 | Entity | 役割 | mock 由来 |
 |---|---|---|
-| **User** | ログインアカウント | `auth.jsx` |
+| **User** | ログインアカウント (Cognito ユーザーと紐付) | `auth.jsx` |
 | **Project** | プロジェクト | `data.jsx` PROJECTS |
 | **Membership** | User × Project の所属関係 (role 付き) | `RESOURCES` + ADR-0011 |
 | **Task** | タスク・フェーズ・マイルストーンを統合 | `data.jsx` TASKS |
@@ -54,7 +55,7 @@ mock 分析（2026-05-09）で以下が判明:
 #### User と Membership と Member (Resource) の関係
 
 ```
-User  (グローバルに 1 人 1 エンティティ)
+User  (グローバルに 1 人 1 エンティティ、Cognito sub と 1:1)
   ├─ is_system_admin: bool
   ├─ display_name, email, avatar_url, ...
   └─ 複数 Project に membership を持つ
@@ -71,31 +72,39 @@ Membership (User × Project の中間テーブル)
 
 ### 2. Task は統合型 (kind 列を作らず flag で表現)
 
-```rust
-struct Task {
-  id: TaskId,
-  project_id: ProjectId,
-  name: String,
-  description: Option<String>,
-  parent: Option<TaskId>,         // phase への参照
-  is_phase: bool,                 // true なら他 field はせいぜい集計ベース
-  start: Date,
-  end: Date,
-  duration: u32,                  // 稼働日、CalendarTemplate を使って計算
-  status: TaskStatus,
-  progress: Option<f32>,          // 0.0–1.0、leaf は status からマップ
-  owner: Option<UserId>,          // 主担当
-  subs: Vec<UserId>,              // 副担当
-  predecessors: Vec<TaskId>,      // FS 依存のみ
-  critical: bool,                 // CP indicator (計算結果をキャッシュ)
-  milestone: bool,                // マイルストーン表示 flag
-  depth: u32,                     // visual hierarchy (phases=0, leaves≥1)
-  created_at, updated_at, ...
-}
+Python (pydantic) での定義イメージ:
 
-enum TaskStatus {
-  Todo, Started, InProgress50, InProgress80, Review, Done, Blocked,
-}
+```python
+class TaskStatus(str, Enum):
+    TODO = "todo"
+    STARTED = "started"
+    IN_PROGRESS_50 = "in-progress-50"
+    IN_PROGRESS_80 = "in-progress-80"
+    REVIEW = "review"
+    DONE = "done"
+    BLOCKED = "blocked"
+
+class Task(BaseModel):
+    id: TaskId
+    project_id: ProjectId
+    name: str
+    description: str | None = None
+    parent: TaskId | None = None         # phase への参照
+    is_phase: bool = False               # true なら他 field はせいぜい集計ベース
+    start: date
+    end: date
+    duration: int                        # 稼働日、CalendarTemplate を使って計算
+    status: TaskStatus
+    progress: float | None = None        # 0.0–1.0、leaf は status からマップ
+    owner: UserId | None = None          # 主担当
+    subs: list[UserId] = []              # 副担当
+    predecessors: list[TaskId] = []      # FS 依存のみ
+    critical: bool = False               # CP indicator (計算結果をキャッシュ)
+    milestone: bool = False              # マイルストーン表示 flag
+    depth: int = 0                       # visual hierarchy (phases=0, leaves≥1)
+    version: int                         # 楽観ロック用
+    created_at: datetime
+    updated_at: datetime
 ```
 
 - Phase も Milestone も Task として保持、flag で区別
@@ -105,20 +114,20 @@ enum TaskStatus {
 
 ### 3. CalendarTemplate は稼働日テンプレートだけ
 
-```rust
-struct CalendarTemplate {
-  id: CalendarId,
-  name: String,                       // "標準" "24h" "金融カレンダー" など
-  working_days: [bool; 7],            // [Sun, Mon, ..., Sat]
-  holidays: Vec<Holiday>,             // 特定日付の非稼働日
-  scope: CalendarScope,               // global | project_specific
-}
+```python
+class Holiday(BaseModel):
+    date: date
+    name: str
 
-struct Holiday { date: Date, name: String }
+class CalendarTemplate(BaseModel):
+    id: CalendarId
+    name: str                            # "標準" "24h" "金融カレンダー" など
+    working_days: tuple[bool, bool, bool, bool, bool, bool, bool]  # [Sun, Mon, ..., Sat]
+    holidays: list[Holiday] = []
 ```
 
 - 「会議」「OOO」「マイルストーンイベント」のような独立予定 entity は作らない
-- マイルストーン → Task の `milestone: true`
+- マイルストーン → Task の `milestone: True`
 - 会議 → Task で表現 (短期間 + 出席者を owner/subs)
 - OOO → 現時点不サポート、必要になったら別 ADR
 
@@ -126,29 +135,35 @@ struct Holiday { date: Date, name: String }
 
 **別 store を作らない。「Activity Feed = Event Log の人間向け view」とする。**
 
-```rust
-struct Event {
-  id: EventId,
-  ts: DateTime<Utc>,
-  actor: UserId,                  // 誰が
-  project_id: ProjectId,          // どの project で
-  kind: EventKind,                // 何をしたか
-  target: Option<EventTarget>,    // 対象エンティティ (TaskId / CommentId / etc)
-  payload: EventPayload,          // before/after の diff
-}
+```python
+class EventKind(str, Enum):
+    TASK_CREATED = "task.created"
+    TASK_UPDATED = "task.updated"
+    TASK_DELETED = "task.deleted"
+    COMMENT_CREATED = "comment.created"
+    COMMENT_DELETED = "comment.deleted"
+    PROJECT_CREATED = "project.created"
+    PROJECT_UPDATED = "project.updated"
+    PROJECT_DELETED = "project.deleted"
+    MEMBER_ADDED = "member.added"
+    MEMBER_REMOVED = "member.removed"
+    MEMBER_ROLE_CHANGED = "member.role_changed"
+    CALENDAR_TEMPLATE_CREATED = "calendar_template.created"
+    CALENDAR_TEMPLATE_UPDATED = "calendar_template.updated"
+    CALENDAR_TEMPLATE_DELETED = "calendar_template.deleted"
+    SENSITIVE_READ = "sensitive.read"      # system_admin 読み audit
 
-enum EventKind {
-  TaskCreated, TaskUpdated, TaskDeleted,
-  CommentCreated, CommentDeleted,
-  ProjectCreated, ProjectUpdated, ProjectDeleted,
-  MemberAdded, MemberRemoved, MemberRoleChanged,
-  CalendarTemplateCreated, CalendarTemplateUpdated, CalendarTemplateDeleted,
-  // 参照 (system_admin の読みアクセス audit)
-  SensitiveRead,
-}
+class Event(BaseModel):
+    id: EventId
+    ts: datetime
+    actor: UserId                     # 誰が
+    project_id: ProjectId             # どの project で
+    kind: EventKind                   # 何をしたか
+    target: dict | None = None        # 対象エンティティ参照
+    payload: dict                     # before/after の diff
 ```
 
-Activity Feed は `q.events.list?project_id=X&since=Y` で正規取得、UI 側で EventKind ごとに人間語に render:
+Activity Feed は `GET /api/events?project_id=X&since=Y` で正規取得、UI 側で EventKind ごとに人間語に render:
 
 ```
 TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
@@ -172,11 +187,11 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
   ```
   ユーザー → Claude Desktop
              ↓  (LLM 推論)
-        yuipath MCP server の q.* / c.* を連携
+        AgentCore Gateway (yuipath の OpenAPI を MCP ツールとして公開)
              ↓
-        YuiPath のデータが更新される
+        FastAPI (Lambda) → DynamoDB
   ```
-- yuipath-mcp (Python、ADR-0009) はこのフローを支援する Strands Agent。pm-mcp (Rust) の上に LLM 推論を被せた合成 MCP サーバー
+- ADR-0013 で MCP exposure は AgentCore Gateway に委譲されたため、合成 LLM ツールやサーバー側推論は提供しない
 
 ### 6. mock 由来の「やらないこと」を明文化
 
@@ -200,9 +215,9 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
 
 ### Accepted (positive)
 
-- ADR-0010 の operation map が **7 エンティティ × CRUD** で機械的に展開できる (見通しが効く)
+- エンティティが 7 つに限定され、FastAPI route と DynamoDB スキーマ設計が見通したやすい
 - Activity Feed 独立 store が消え、Event Log 1 つに集約 → 二重実装ゼロ
-- AI 機能を本体から切り離すことで、本体は「純粋な CRUD + MCP」として単純化
+- AI 機能を本体から切り離すことで、本体は「純粋な CRUD + AgentCore Gateway 経由の MCP」として単純化
 - mock の設計意図と実装方針が一致、仕様とコードのズレが上がりにくい
 - Task を flag で表現するため、Phase や Milestone の導入/削除でスキーマ変更不要
 
@@ -210,7 +225,6 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
 
 - 「会議」「OOO」を task で表現するため、出欠管理やカレンダー双方向連携は不可
 - AI 機能の利用に MCP クライアントが必須。一般エンドユーザー向け SaaS としては敷居高め → ドキュメントとオンボーディングで許容
-- yuipath-mcp と pm-mcp の役割境界が「AI 推論あり/なし」になり、推論なし (単純な MCP 操作) の構成も成立する
 - TaskStatus 遷移ルール不在 → 不整合な遷移 (done → todo など) が起き得る
   → UI で顔とダイアログで抑制、必要であれば後付け
 
@@ -218,7 +232,7 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
 
 ### Event payload の format 進化
 - kind ごとに payload schema が違う → migration が辛い
-- **緩和**: schemars で版付け、過去 event も読める forward compat 設計。payload は tagged enum で schema 明示
+- **緩和**: pydantic モデルで kind ごとの payload を型付け、版付け、過去 event も読める forward compat 設計
 
 ### 「会議も task」の認識ズレ
 - 利用者が「Task = 作業」と狭く解釈すると会議入力が阮害される
@@ -229,8 +243,8 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
 - **緩和**: ブランディングで「AI 連携は MCP クライアントから」を強調。Claude Desktop / Claude Code を推奨クライアントとしての onboarding を用意
 
 ### Membership に color/capacity/allocation が位置づく関係
-- Pattern A (ローカル 1 人) でも Membership テーブルが必須になる
-- **緩和**: Pattern A ではユーザー作成時にデフォルト Membership (color: 乱数 / capacity: 1.0 / allocation: 1.0) を自動生成
+- 1 user システムでも Membership テーブルが必須になる
+- **緩和**: ユーザー作成時にデフォルト Membership (color: 乱数 / capacity: 1.0 / allocation: 1.0) を自動生成
 
 ## Revisit when
 
@@ -242,10 +256,8 @@ TaskUpdated(payload: { field: "status", from: "todo", to: "in-progress-50" })
 
 ## 関連
 
+- ADR-0013 (アーキテクチャリセット) — 本 ADR の 7 エンティティを FastAPI + DynamoDB で実装、MCP は AgentCore Gateway 経由
 - ADR-0002 (Event Log on DynamoDB) — Event entity の永続化先、Activity Feed もここから読む
 - ADR-0003 (AI via external MCP) — 「本体に AI UI なし」を本 ADR で明誌
-- ADR-0008 (Codegen) — 本 ADR のエンティティ 7 つを source に operations / schema / openapi / mcp manifest を生成
-- ADR-0009 (Strands → AgentCore) — yuipath-mcp は pm-mcp の上に LLM を被せる、本体とは独立した追加サーバー
-- ADR-0010 (MCP-first) — operation map は本 ADR の 7 エンティティ × CRUD で展開
 - ADR-0011 (Roles and permissions) — 「Member = Resource」「自分の task = owner OR subs」を本 ADR でエンティティとして確定
 - mock/project/data.jsx — エンティティ定義の正典

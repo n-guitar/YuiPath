@@ -2,8 +2,8 @@
 
 - Status: Proposed
 - Date: 2026-05-09
-- Updated: 2026-05-09 (mock 分析後の訂正、ADR-0012 と並行確定)
-- Related: ADR-0010 (MCP-first と read/write 分離), ADR-0012 (ドメインエンティティ確定)
+- Updated: 2026-05-09 (ADR-0013 によるアーキテクチャリセットを反映、Python 表現に調整)
+- Related: ADR-0013 (現行のアーキテクチャ), ADR-0012 (ドメインエンティティ確定)
 
 ## Context
 
@@ -18,16 +18,17 @@ ADR-0010 で read/write scope を分離したが、**「誰が何をできるか
 
 考慮した論点:
 
-- system_admin を設けるか → 設ける（Pattern B では運営・コンプライアンス・サポートに不可欠、Org 概念を後付けで入れる軽量ストップとしても有効）
+- system_admin を設けるか → 設ける（運営・コンプライアンス・サポートに不可欠、Org 概念を後付けで入れる軽量ストップとしても有効）
 - Org / Workspace 階層は作らない（シンプルさ優先、必要になった時点で ADR で検討）
-- system_admin はデータ閲覧を escalation 制にするか → **しない**。信頼前提、event log で足りる
+- system_admin はデータ閲覧を escalation 制にするか → **しない**。信頼前提、Event Log で足りる
 - 複数 admin・ロール変更を許すか → 両方許す（単独 admin は SPOF、組織は変わる）
 
-訂正履歴（2026-05-09 追記）:
+訂正履歴:
 
-- mock/project/data.jsx 分析により、「Resource」と「Member」は同一概念と確定。本 ADR では **Member** で統一
-- mock に「独立 calendar event entity」は存在しないため、当初記載した Calendar event の権限行を削除
-- 「自分のタスク」 = `task.owner == self OR self ∈ task.subs` と明記
+- 2026-05-09: mock 分析により、Resource = Member と確定。本 ADR では Member で統一
+- 2026-05-09: Calendar event は独立 entity ではないため、該当行を削除
+- 2026-05-09: 「自分のタスク」 = `task.owner == self OR self ∈ task.subs` と明記
+- 2026-05-09: ADR-0013 によるアーキテクチャリセットを反映。Rust trait 言及を削除、Python + Cognito ベースの表現に調整
 
 ## Decision
 
@@ -40,7 +41,7 @@ project_member   そのプロジェクトの参加者
 ```
 
 - 階層概念（Org / Workspace）は作らない
-- ユーザーは `is_system_admin: bool` + 各プロジェクトへの `Membership { role: admin | member }` を持つ
+- ユーザーは `is_system_admin: bool` + 各プロジェクトへの `Membership { role: project_admin | project_member }` を持つ
 - これ以外のロール（viewer / billing / auditor などの細分化）は現時点で作らない
 
 ### 原則: 読みは緩く、書きは厳しく
@@ -50,7 +51,7 @@ project_member   そのプロジェクトの参加者
 | ロール | 見える範囲 |
 |---|---|
 | system_admin | 全プロジェクトの全データ（タスク本文・コメント含む） |
-| project_admin / member | 所属プロジェクトの全データ |
+| project_admin / project_member | 所属プロジェクトの全データ |
 | 非所属 | 何も見えない |
 
 権限を細切れにしない。見える/見えないの線は **プロジェクト所属の有無 + system_admin フラグ** だけ。Event Log (監査ログ) も同じルールで見える。
@@ -131,79 +132,45 @@ task が 「自分のもの」 ⇔ task.owner == self OR self ∈ task.subs
 - **信頼前提と運用責任で担保し、Event Log で事後検証可能にする**
 - system_admin の読みアクセスも Event Log に記録される（「誰がいつ何を見たか」を project_admin が事後確認できる）
 
-### MCP scope と role は別軸
+### 認証 (who) と認可 (what) の分担 (ADR-0013 反映)
 
-| 軸 | 値 | 役割 |
+| 軸 | 責任 | 実装 |
 |---|---|---|
-| **token scope** | `read` / `write` / `admin` / `system` | クライアントに渡す鍵の上限。MCP ツール一覧をフィルタする UX 用 |
-| **role** | system_admin / project_admin / project_member | サーバーが最終判断する実権限 |
+| **認証** (誰か) | AWS マネージド | API Gateway HTTP API の Cognito JWT Authorizer / AgentCore Gateway の OAuth |
+| **認可** (何ができるか) | 我々の handler 層 | FastAPI の route 関数内で本 ADR のロール check + ownership check |
 
-最終ゲートは **常に role 側**。token scope は「何を試せるか」、role は「実際に通るか」。
+FastAPI での実装イメージ (擬似コード):
 
-#### MCP ツール名規則
+```python
+@app.post("/api/tasks/{task_id}")
+async def update_task(task_id: str, body: UpdateTaskInput, request: Request):
+    user = User.from_claims(request.scope[...])  # 検証済 claims
+    task = await store.get_task(task_id)
+    membership = await store.get_membership(user.id, task.project_id)
 
-```
-q.*    読み                    (token: read 以上)
-c.*    プロジェクト内書き         (token: write 以上)
-s.*    システム書き                (token: system のみ)
-```
+    if not _can_write_task(user, membership, task):
+        raise HTTPException(403)
 
-例:
+    return await store.update_task(task_id, body)
 
-```jsonc
-{
-  "name": "c.tasks.update",
-  "annotations": { "destructiveHint": false, "idempotentHint": true },
-  "_meta": {
-    "yuipath:requiredScope": "write",
-    "yuipath:requiredRole": "member",
-    "yuipath:ownership": "owner_or_subs_or_admin"
-  }
-}
-{
-  "name": "c.projects.set_member_role",
-  "_meta": {
-    "yuipath:requiredScope": "write",
-    "yuipath:requiredRole": "project_admin",
-    "yuipath:guards": ["not_self_promotion", "not_last_admin"]
-  }
-}
-{
-  "name": "s.users.set_system_admin",
-  "_meta": {
-    "yuipath:requiredScope": "system",
-    "yuipath:requiredRole": "system_admin",
-    "yuipath:guards": ["not_last_admin"]
-  }
-}
+def _can_write_task(user, membership, task) -> bool:
+    if user.is_system_admin:
+        return True
+    if membership and membership.role == "project_admin":
+        return True
+    return user.id == task.owner or user.id in task.subs
 ```
 
-ツールの `tools/list` 出力は role でフィルタしない。呼んだ際に 403 を返す → LLM が「これはできない」を学べる。
+### token scope (read / write / admin / system) の位置づけ
 
-### Pattern ごとの振舞い
+「読みだけ bot」「管理者作業だけ bot」のように token の上限を制限したい要件が出たとき、Cognito custom scope で実装可能:
 
-| Pattern | 実態 | UI |
-|---|---|---|
-| **A (Tauri ローカル)** | 持ち主が暗黙的に system_admin かつ全プロジェクトの project_admin | ロール概念を一切出さない。「自分のアプリ」として動く |
-| **B (セルフホスト)** | 初期 system_admin は env (`YUIPATH_INITIAL_SYSTEM_ADMIN=...`) で指定。以降は本人が追加可 | 設定画面に「システム管理」セクション |
-| **B (SaaS)** | 運営チームが system_admin | 一般ユーザーには system_admin の存在を見せない |
+- Cognito Resource Server で `yuipath/read` / `yuipath/write` / `yuipath/admin` / `yuipath/system` を定義
+- Claude Desktop / SPA が OAuth flow で要求 scope を指定
+- JWT claims に scope が乗る
+- handler が「この操作に必要な scope があるか」を role check の手前でチェック
 
-**Pattern A を壊さないコツ**:
-- ロール機構は Phase 1 から実装する
-- Pattern A ではユーザー作成時に自動で system_admin、プロジェクト作成時に自動で project_admin
-- UI で「メンバー追加」「権限変更」を出さないだけ
-- **コードは同じ、UI 出し分けで済ませる**
-
-### 不採用の設計（シンプルさを保つため）
-
-以下は採用しない。必要になった時点で別 ADR で検討する:
-
-- 4-eyes 承認（admin 任命に 2 人の承認が必要）
-- 期限付き admin（一時的に admin になる）
-- 委譲フロー（admin から member への正式な引き継ぎ手続き）
-- ロール一括変更
-- viewer / billing / auditor などの細分化ロール
-- Org / Workspace 階層
+ただし **v1 では実装しない**。全 user はログインしただけで role に応じた全機能を使える。必要になったケース (ダッシュボード同期だけの bot user 等) で ADR を起こして追加。
 
 ## Consequences
 
@@ -211,24 +178,23 @@ s.*    システム書き                (token: system のみ)
 
 - 覆えるルールは実質 **2 つだけ**: 「最後の admin は降格不可」「自分の昇格不可」
 - 単独 admin の SPOF リスクを陥らず、複数 admin と動的ロール変更を両立
-- read-only LLM bot / dashboard に `read` token を渡しただけで事故防止が効く
+- 認証は AWS マネージド (Cognito) に委譲できるため、自前実装の脆弱性リスクを陥らない
 - system_admin の動きも Event Log で事後検証可能、信頼と透明性のバランスが取れる
-- Pattern A と B でコードを分けず、UI 表示だけで出し分けられる
 - 「owner OR subs」と明記したことで、副担当の勤務フローが自然に表現される
+- Pattern A と B の区別が消え、ローカル・クラウドとも 1 コードベースで role check が動く (ADR-0013)
 
 ### Accepted (negative)
 
 - system_admin は実質何でもできる → 信頼した人を選ぶ責任が運用側に集中
 - escalation フローがないため、コンプライアンス要件で「データ閲覧には上位者承認が必要」と言われたら ADR 追加で対応
-- viewer ロールがないため「読みだけ参加させたい人」は bot ユーザー + read scope token を採らないと表現できない
-- Org / Workspace を後から入れると、ユーザー・プロジェクト・メンバーシップの関係を全体調整するマイグレーションが必要
-- subs も「自分の task」に含めたため、副担当が多数設定されると「複数人が全員書込める」状態になる → ADR-0010 の expected_version (optimistic locking) でコンフリクト検出
+- viewer ロールがないため「読みだけ参加させたい人」は現状表現できない
+- subs も「自分の task」に含めたため、副担当が多数設定されると「複数人が全員書込める」状態になる → expected_version (optimistic locking) でコンフリクト検出
 
 ## Risks
 
 ### system_admin のアカウント侵害
 - 被害がインスタンス全体に及ぶ
-- **緩和**: system_admin には MFA 必須、`system` scope token は短寿命・使用ごとに発行、長期 token を禁止
+- **緩和**: system_admin には Cognito MFA 必須、長期 token を禁止
 
 ### 「自分の task」の定義ブレ
 - owner が代わった、もしくは subs から外された人が以前の記憶で「自分の task」と思う
@@ -236,11 +202,7 @@ s.*    システム書き                (token: system のみ)
 
 ### 複数 admin の互い違いの設定上書き
 - A が設定したものを B がその直後上書きしてトラブル
-- **緩和**: ADR-0010 の expected_version (optimistic locking) を全 c.* ツールで必須にし、コンフリクトを検出
-
-### MCP クライアントのツールキャッシュ
-- クライアントが以前見えていた admin ツールをロール剥奪後も表示し続け、呼んで 403
-- **緩和**: 403 のエラーメッセージに「現在のロールと必要なロール」を明記し、LLM が判断できるように
+- **緩和**: expected_version (optimistic locking) を全 write エンドポイントで必須にし、コンフリクトを検出
 
 ## Revisit when
 
@@ -248,10 +210,10 @@ s.*    システム書き                (token: system のみ)
 - 大規模チームで「Org ごとの請求・コストセンター」要件が出る → Org/Workspace 導入の ADR
 - コンプライアンス・上場要件で system_admin の処理に人間上位者承認が必要 → escalation フローの ADR
 - system_admin を 1 人でも「危険」と見る要件 → 4-eyes 承認・期限付き昇格の導入
+- token scope を read/write/admin/system に分けたい要件 → Cognito custom scope で実装を追加 ADR
 
 ## 関連
 
-- ADR-0010 (MCP-first と read/write 分離) — token scope の定義を本 ADR で 4 個に拡張
-- ADR-0006 (Storage と Event Log の trait 抽象化) — `MembershipReader` trait を追加予定
-- ADR-0008 (Codegen) — MCP manifest の `_meta.yuipath:requiredRole` / `yuipath:ownership` / `yuipath:guards` 出力に適用
-- ADR-0012 (ドメインエンティティ確定) — 本 ADR の「Member」「task owner/subs」「Event Log」は ADR-0012 でエンティティとして確定
+- ADR-0013 (アーキテクチャリセット) — 認証の AWS マネージド委譲と 1 コードベース設計を提供
+- ADR-0012 (ドメインエンティティ確定) — 本 ADR の「Member」「task owner/subs」「Event Log」をエンティティとして確定
+- ADR-0002 (Event Log on DynamoDB) — ロール変更と system_admin 読みアクセスはここに記録
