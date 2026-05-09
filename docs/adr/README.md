@@ -49,6 +49,10 @@ YuiPath プロジェクトの**設計上の重要な決定**を、決定した�
 | [0002](./0002-event-log-on-dynamodb.md) | Event log を DynamoDB single-table に格納 | Accepted |
 | [0003](./0003-ai-via-external-mcp.md) | AI 機能は MCP server + REST API として外付け | Accepted |
 | [0004](./0004-license-apache-2-with-trademark.md) | Apache License 2.0 + TRADEMARKS.md でブランド保護 | Accepted |
+| [0005](./0005-monorepo-workspace-layout.md) | Monorepo workspace layout (Cargo + pnpm) | Proposed |
+| [0006](./0006-storage-and-event-trait-abstraction.md) | Storage と Event Log を trait で抽象化 | Proposed |
+| [0007](./0007-local-dev-environment.md) | ローカル開発環境（cargo-lambda + LocalStack） | Proposed |
+| [0008](./0008-types-and-schema-codegen.md) | 型・スキーマ・API 契約は Rust → TS への一方向 codegen で統一 | Proposed |
 
 ## 参考
 
