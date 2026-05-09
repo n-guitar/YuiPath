@@ -55,6 +55,7 @@ YuiPath プロジェクトの**設計上の重要な決定**を、決定した�
 | [0008](./0008-types-and-schema-codegen.md) | 型・スキーマ・API 契約は Rust → TS への一方向 codegen で統一 | Proposed |
 | [0009](./0009-mcp-server-strands-agentcore.md) | MCP server の実装手段 — Strands Agents (ローカル) → Bedrock AgentCore (リモート) | Proposed |
 | [0010](./0010-mcp-first-and-read-write-separation.md) | MCP を第一級 API 表面に / 参照・更新の分離 | Proposed |
+| [0011](./0011-roles-and-permissions.md) | ロールと権限分離 (system_admin / project_admin / project_member) | Proposed |
 
 ## 参考
 
