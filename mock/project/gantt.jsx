@@ -229,6 +229,80 @@ function GanttList({ tasks, collapsed, setCollapsed, onOpenTask, selectedId, set
 function GanttTimeline({ tasks, startDate, totalDays, dayPx, zoom, xFor, wFor, todayX, onOpenTask, selectedId, setHoverId }) {
   const width = totalDays * dayPx;
   const rowH = 32;
+
+  // ─── Bar drag (move / resize-l / resize-r) ───
+  // Drag commits straight to the task store; the bar repositions on the
+  // next render. We capture origStart/origEnd at pointerdown so the
+  // delta math is always relative to the click origin (no drift).
+  const dragRef = React.useRef(null);
+  const [dragId, setDragId] = React.useState(null);
+  const calendar = getCalendarFor((window.PROJECTS || []).find(p => p.current));
+
+  const beginDrag = (e, task, mode) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (task.isPhase) return;
+    if (task.milestone && mode !== "move") return;
+    e.stopPropagation();
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (_) {}
+    dragRef.current = {
+      id: task.id, mode,
+      origStart: task.start, origEnd: task.end,
+      startX: e.clientX,
+      moved: false,
+      pointerId: e.pointerId,
+      target: e.currentTarget,
+    };
+    setDragId(task.id);
+    document.body.classList.add(mode === "move" ? "pw-dragging-move" : "pw-dragging-resize");
+  };
+
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const days = Math.round((e.clientX - d.startX) / dayPx);
+    if (days === 0 && !d.moved) return;
+    if (Math.abs(e.clientX - d.startX) < 3 && !d.moved) return;
+    d.moved = true;
+
+    if (d.mode === "move") {
+      const newStart = fmtDate(addDays(parseDate(d.origStart), days));
+      const newEnd   = fmtDate(addDays(parseDate(d.origEnd),   days));
+      updateTask(d.id, { start: newStart, end: newEnd });
+    } else if (d.mode === "resize-l") {
+      let newStart = fmtDate(addDays(parseDate(d.origStart), days));
+      // Don't allow start to pass end — clamp to one day before end.
+      if (parseDate(newStart) > parseDate(d.origEnd)) {
+        newStart = d.origEnd;
+      }
+      const dur = Math.max(1, workingDaysBetween(newStart, d.origEnd, calendar));
+      updateTask(d.id, { start: newStart, duration: dur });
+    } else if (d.mode === "resize-r") {
+      let newEnd = fmtDate(addDays(parseDate(d.origEnd), days));
+      if (parseDate(newEnd) < parseDate(d.origStart)) {
+        newEnd = d.origStart;
+      }
+      const dur = Math.max(1, workingDaysBetween(d.origStart, newEnd, calendar));
+      updateTask(d.id, { end: newEnd, duration: dur });
+    }
+  };
+
+  const endDrag = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    try { d.target?.releasePointerCapture?.(d.pointerId); } catch (_) {}
+    document.body.classList.remove("pw-dragging-move", "pw-dragging-resize");
+    const wasMoved = d.moved;
+    dragRef.current = null;
+    setDragId(null);
+    // Suppress the click that follows a real drag (browsers may still fire
+    // it after pointercapture release). For pure clicks, the bar's onClick
+    // handler will fire normally and we don't interfere.
+    if (wasMoved && e.currentTarget) {
+      const stop = (ev) => { ev.stopPropagation(); };
+      e.currentTarget.addEventListener("click", stop, { once: true, capture: true });
+    }
+  };
   // Build header rows
   const months = [];
   let cur = new Date(startDate);
@@ -378,8 +452,12 @@ function GanttTimeline({ tasks, startDate, totalDays, dayPx, zoom, xFor, wFor, t
               if (t.milestone) {
                 return (
                   <div key={t.id}
-                    className="pw-bar pw-bar--milestone"
+                    className={"pw-bar pw-bar--milestone" + (dragId === t.id ? " pw-bar--dragging" : "")}
                     style={{ left: x - 8, top: idx*rowH + (rowH-16)/2, width:16, height:16 }}
+                    onPointerDown={(e) => beginDrag(e, t, "move")}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
                     onClick={() => onOpenTask(t.id)}
                     title={t.name}>
                     <div className="pw-bar__diamond"/>
@@ -400,19 +478,31 @@ function GanttTimeline({ tasks, startDate, totalDays, dayPx, zoom, xFor, wFor, t
                 );
               }
               const meta = STATUS_BY_VALUE[t.status] || STATUSES[0];
-              const cls = "pw-bar pw-bar--status"
+              const cls = "pw-bar pw-bar--status pw-bar--draggable"
                 + (t.critical ? " pw-bar--critical" : "")
                 + (selectedId === t.id ? " pw-bar--selected" : "")
-                + (t.status === "blocked" ? " pw-bar--blocked" : "");
+                + (t.status === "blocked" ? " pw-bar--blocked" : "")
+                + (dragId === t.id ? " pw-bar--dragging" : "");
               return (
                 <div key={t.id}
                   className={cls}
                   style={{ left: x, top: y, width: w, height: h, "--bar-color": meta.color }}
+                  onPointerDown={(e) => beginDrag(e, t, "move")}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
                   onClick={() => onOpenTask(t.id)}
                   onMouseEnter={() => setHoverId && setHoverId(t.id)}
                   onMouseLeave={() => setHoverId && setHoverId(null)}
                   title={`${t.name}\n${meta.label} · ${t.start} → ${t.end} (${t.duration}d)`}>
                   <div className="pw-bar__fill" style={{ width: `${t.progress*100}%` }} />
+                  {/* Resize handles — invisible 6px slabs at each edge.
+                      pointerdown here is "resize"; stopPropagation prevents
+                      the body's "move" handler from also firing. */}
+                  <div className="pw-bar__handle pw-bar__handle--l"
+                    onPointerDown={(e) => beginDrag(e, t, "resize-l")}/>
+                  <div className="pw-bar__handle pw-bar__handle--r"
+                    onPointerDown={(e) => beginDrag(e, t, "resize-r")}/>
                   {w > 80 && (
                     <div className="pw-bar__inner">
                       {t.owner && <PrimaryAvatar owner={t.owner} subs={t.subs} size={16} showSubs={false} />}

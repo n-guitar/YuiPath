@@ -2372,6 +2372,46 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-bar--status .pw-bar__fill {
   background: var(--bar-color);
 }
+
+/* Drag affordances ─ leaf bars only. Phase bars and milestones don't
+   resize; phase bars don't move either (their dates derive from
+   children). The body shows a "grab" cursor; small invisible slabs at
+   each edge convert to ew-resize for resize-drag. */
+.pw-bar--draggable { cursor: grab; }
+.pw-bar--draggable:active { cursor: grabbing; }
+.pw-bar--milestone { cursor: grab; }
+.pw-bar--milestone:active { cursor: grabbing; }
+
+.pw-bar__handle {
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 3;
+  /* Tiny brand-colored hint on hover so users discover the resize edge. */
+  background: transparent;
+  transition: background 0.1s;
+}
+.pw-bar--draggable:hover .pw-bar__handle { background: color-mix(in srgb, var(--bar-color) 40%, transparent); }
+.pw-bar__handle--l { left: -1px;  border-radius: 4px 0 0 4px; }
+.pw-bar__handle--r { right: -1px; border-radius: 0 4px 4px 0; }
+
+/* Subtle bump while dragging so the user can see what they're moving */
+.pw-bar--dragging {
+  filter: brightness(1.05);
+  box-shadow: 0 0 0 2px var(--accent-soft-2), var(--shadow-2);
+  z-index: 5;
+}
+
+/* Force the global cursor while a drag is in flight — without this the
+   cursor reverts when the pointer leaves the bar's bounds (it doesn't
+   leave the bar via pointer capture, but visually the cursor follows
+   the bar's hover styles only). */
+body.pw-dragging-move,
+body.pw-dragging-move * { cursor: grabbing !important; }
+body.pw-dragging-resize,
+body.pw-dragging-resize * { cursor: ew-resize !important; }
 /* Blocked: solid red, slight diagonal stripes to call attention without
    stealing the critical-path outline channel. */
 .pw-bar--blocked {
