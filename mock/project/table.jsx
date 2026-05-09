@@ -466,28 +466,40 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
             />
           ))}
 
-          {/* Empty state when filter excludes everything */}
+          {/* Empty state — distinguishes "no tasks at all" from "filtered out". */}
           {displayed.length === 0 && (
             <div className="pw-tg-empty-row"
               style={{ gridColumn: `1 / span ${TABLE_COLUMNS.length + 2}` }}>
-              <div className="pw-empty">
-                <Icon name="search" size={28}/>
-                <div className="pw-empty__title">該当するタスクがありません</div>
-                <div className="pw-empty__sub">
-                  {tasks.filter(t => !t.isPhase).length === 0
-                    ? "+ 新規タスクから最初のタスクを作成してください"
-                    : "フィルタを変更するか、解除して再表示できます"}
+              {tasks.length === 0 ? (
+                <div className="pw-empty pw-empty--onboarding">
+                  <YuiPathMark size={56}/>
+                  <div className="pw-empty__title">タスクがまだありません</div>
+                  <div className="pw-empty__sub">直接入力するか、CSV から取り込んで始められます。</div>
+                  <div className="pw-empty__cta-row">
+                    <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
+                      <Icon name="plus" size={14}/> 最初のタスクを追加
+                    </button>
+                    <button className="pw-btn pw-btn--ghost pw-btn--sm" onClick={handleImportClick}>
+                      <Icon name="upload" size={14}/> CSV をインポート
+                    </button>
+                  </div>
                 </div>
-                {(filterPhase !== "all" || search || ownerFilter.length || statusFilter.length) > 0 && (
-                  <button className="pw-btn pw-btn--ghost pw-btn--sm"
-                    onClick={() => {
-                      setFilterPhase("all"); setSearch("");
-                      setOwnerFilter([]); setStatusFilter([]);
-                    }}>
-                    <Icon name="close" size={12}/> フィルタを解除
-                  </button>
-                )}
-              </div>
+              ) : (
+                <div className="pw-empty">
+                  <Icon name="search" size={28}/>
+                  <div className="pw-empty__title">該当するタスクがありません</div>
+                  <div className="pw-empty__sub">フィルタを変更するか、解除して再表示できます</div>
+                  {(filterPhase !== "all" || search || ownerFilter.length || statusFilter.length) > 0 && (
+                    <button className="pw-btn pw-btn--ghost pw-btn--sm"
+                      onClick={() => {
+                        setFilterPhase("all"); setSearch("");
+                        setOwnerFilter([]); setStatusFilter([]);
+                      }}>
+                      <Icon name="close" size={12}/> フィルタを解除
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

@@ -16,10 +16,12 @@ function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
   const [ownerFilter, setOwnerFilter] = React.useState([]);
   const [statusFilter, setStatusFilter] = React.useState([]);
 
-  // Project span (pad +/-)
+  // Project span (pad +/-). Guard against tasks=[] — reduce on an empty
+  // array would throw. Fall back to the active project's span so the
+  // toolbar / today marker keeps a coherent context.
   const allDates = tasks.flatMap(t => [t.start, t.end]);
-  const min = allDates.reduce((a,b) => a < b ? a : b);
-  const max = allDates.reduce((a,b) => a > b ? a : b);
+  const min = allDates.length > 0 ? allDates.reduce((a,b) => a < b ? a : b) : PROJECT.startDate;
+  const max = allDates.length > 0 ? allDates.reduce((a,b) => a > b ? a : b) : PROJECT.endDate;
   const startDate = parseDate(min); startDate.setDate(startDate.getDate() - 7);
   const endDate = parseDate(max); endDate.setDate(endDate.getDate() + 7);
   const totalDays = Math.round((endDate - startDate) / MS_DAY);
@@ -105,7 +107,18 @@ function GanttScreen({ tweaks, onOpenTask, onCreateTask, selectedId }) {
       </div>
 
       <div className="pw-gantt__body">
-        {visibleTasks.length === 0 ? (
+        {tasks.length === 0 ? (
+          <div className="pw-gantt__empty">
+            <div className="pw-empty pw-empty--onboarding">
+              <YuiPathMark size={56}/>
+              <div className="pw-empty__title">タスクがまだありません</div>
+              <div className="pw-empty__sub">最初のタスクを作成すると、ここにバーが並びます。</div>
+              <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateTask}>
+                <Icon name="plus" size={14}/> 最初のタスクを追加
+              </button>
+            </div>
+          </div>
+        ) : visibleTasks.length === 0 ? (
           <div className="pw-gantt__empty">
             <div className="pw-empty">
               <Icon name="search" size={28}/>

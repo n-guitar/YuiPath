@@ -1405,6 +1405,111 @@ button { font: inherit; color: inherit; cursor: pointer; }
   justify-content: center;
 }
 
+/* Onboarding empty: bigger / more inviting than .pw-empty default. Used
+   for "no tasks yet" inside Table / Gantt. */
+.pw-empty--onboarding {
+  padding: 56px 28px;
+  gap: 12px;
+  max-width: 440px;
+}
+.pw-empty--onboarding .pw-empty__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pw-empty--onboarding .pw-empty__sub {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.pw-empty__cta-row {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+/* ─────────── Dashboard onboarding hero ─────────── */
+.pw-dash--onboarding {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 32px 20px;
+}
+.pw-onboard {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  padding: 36px 32px 32px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-2);
+}
+.pw-onboard__title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0 0;
+  letter-spacing: -0.01em;
+}
+.pw-onboard__lead {
+  font-size: 13.5px;
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.55;
+  max-width: 380px;
+}
+.pw-onboard__steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  width: 100%;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.pw-onboard__steps > li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.pw-onboard__step-num {
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+.pw-onboard__steps > li > div {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pw-onboard__steps > li strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pw-onboard__steps > li span {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.pw-onboard__cta-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 /* ─────────── Avatars ─────────── */
 .pw-avatar {
   display: inline-grid; place-items: center;
@@ -2389,9 +2494,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: repeating-linear-gradient(90deg, var(--text-tertiary) 0 4px, transparent 4px 8px);
   opacity: 0.5;
 }
-.pw-res__col-summary { padding: 10px 14px; border-left: 1px solid var(--border); }
+.pw-res__col-summary {
+  padding: 10px 14px;
+  border-left: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+}
 .pw-res__alloc { font-size: 12.5px; color: var(--text-2); }
 .pw-res__alloc--over { color: var(--critical); font-weight: 500; }
+/* Inline delete: hidden by default, fades in on row hover */
+.pw-res__row-delete {
+  opacity: 0;
+  color: var(--text-tertiary);
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.pw-res__row:hover .pw-res__row-delete { opacity: 1; }
+.pw-res__row-delete:hover {
+  color: var(--critical);
+  background: var(--critical-soft);
+}
 
 /* ─────────── Projects list ─────────── */
 .pw-projects { padding: 0 32px 40px; }

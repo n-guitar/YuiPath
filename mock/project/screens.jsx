@@ -98,12 +98,61 @@ function evaluateMilestones(ctx) {
 }
 
 // ─────────── Dashboard ───────────
-function DashboardScreen({ onOpenTask, onOpenResource }) {
+function DashboardScreen({ onOpenTask, onOpenResource, onCreateTask, onGoView }) {
   useTasks();
   useResources();
 
   const tasks = window.TASKS || [];
   const resources = window.RESOURCES || [];
+
+  // Onboarding hero — no tasks means there's nothing for the detectors to
+  // chew on, so the regular dashboard would render mostly-empty cards with
+  // stale activity. Replace it with a focused first-run experience.
+  if (tasks.length === 0) {
+    return (
+      <div className="pw-dash pw-dash--onboarding">
+        <div className="pw-onboard">
+          <YuiPathMark size={96} animated/>
+          <h2 className="pw-onboard__title">プロジェクトを始めましょう</h2>
+          <p className="pw-onboard__lead">
+            タスクを並べて、日程を組んで、進捗を可視化する。シンプルなプロジェクト管理ツール。
+          </p>
+          <ol className="pw-onboard__steps">
+            <li>
+              <span className="pw-onboard__step-num">1</span>
+              <div>
+                <strong>タスクを追加</strong>
+                <span>テーブル画面で直接入力、または CSV から取り込み</span>
+              </div>
+            </li>
+            <li>
+              <span className="pw-onboard__step-num">2</span>
+              <div>
+                <strong>日程を組む</strong>
+                <span>ガントで開始日・期間・依存関係を可視化</span>
+              </div>
+            </li>
+            <li>
+              <span className="pw-onboard__step-num">3</span>
+              <div>
+                <strong>状況を把握する</strong>
+                <span>このダッシュボードで「要注意」シグナルを自動検出</span>
+              </div>
+            </li>
+          </ol>
+          <div className="pw-onboard__cta-row">
+            <button className="pw-btn pw-btn--primary" onClick={onCreateTask}>
+              <Icon name="plus" size={14}/> 最初のタスクを追加
+            </button>
+            <button className="pw-btn pw-btn--ghost" onClick={() => onGoView?.("table")}>
+              <Icon name="table" size={14}/> テーブル画面を開く
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const weekLoads = computeWeeklyLoad(24, PROJECT.startDate);
   const ctx = { tasks, resources, weekLoads };
 
@@ -353,7 +402,7 @@ function computeWeeklyLoad(weeks = 24, startDate = PROJECT.startDate) {
 }
 
 // ─────────── Resources ───────────
-function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource }) {
+function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource, askDeleteResource }) {
   useTasks();         // re-render on task edits (load changes)
   const resources = useResources();
   const startISO = PROJECT.startDate;
@@ -405,10 +454,10 @@ function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource }) {
         </div>
         <div className="pw-res__body">
           {resources.length === 0 && (
-            <div className="pw-empty pw-empty--inline">
-              <Icon name="users" size={28}/>
+            <div className="pw-empty pw-empty--onboarding pw-empty--inline">
+              <YuiPathMark size={56}/>
               <div className="pw-empty__title">メンバーがいません</div>
-              <div className="pw-empty__sub">「+ メンバー追加」から最初のメンバーを登録してください</div>
+              <div className="pw-empty__sub">最初のメンバーを登録すると、稼働率がここに表示されます。</div>
               <button className="pw-btn pw-btn--primary pw-btn--sm" onClick={onCreateResource}>
                 <Icon name="plus" size={12}/> メンバー追加
               </button>
@@ -452,6 +501,14 @@ function ResourcesScreen({ onOpenTask, onOpenResource, onCreateResource }) {
                   <div className={"pw-res__alloc" + (peak > 1.0 ? " pw-res__alloc--over" : "")}>
                     平均 {Math.round(avg*100)}% <span className="pw-muted">/ ピーク {Math.round(peak*100)}%</span>
                   </div>
+                  {askDeleteResource && r.id !== CURRENT_USER_ID && (
+                    <button
+                      className="pw-icon-btn pw-icon-btn--sm pw-res__row-delete"
+                      onClick={(e) => { e.stopPropagation(); askDeleteResource(r.id); }}
+                      title="メンバーを削除">
+                      <Icon name="trash" size={14}/>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -964,7 +1021,7 @@ function ResourceDrawer({ resourceId, onClose, onDelete, onOpenTask }) {
             <span>メンバー</span>
           </div>
           <div className="pw-drawer__head-tools">
-            {onDelete && (
+            {onDelete && r.id !== CURRENT_USER_ID && (
               <button className="pw-icon-btn" onClick={() => onDelete(r.id)} title="削除">
                 <Icon name="trash" size={16}/>
               </button>

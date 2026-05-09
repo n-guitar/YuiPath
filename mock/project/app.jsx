@@ -204,6 +204,17 @@ function App() {
   const askDeleteResource = (id) => {
     const r = (window.RESOURCES || []).find(x => x.id === id);
     if (!r) return;
+    // Self-delete is blocked. Convention: an account cannot delete itself
+    // through the in-app UI — it would orphan the session. Show a notice.
+    if (id === CURRENT_USER_ID) {
+      askConfirm({
+        title: "ご自身は削除できません",
+        body: <p>ログイン中のアカウントを自分自身で削除することはできません。アカウントを完全に削除するには、ログアウト後に管理者へ依頼してください。</p>,
+        confirmLabel: "OK",
+        onConfirm: () => closeConfirm(),
+      });
+      return;
+    }
     const owned = (window.TASKS || []).filter(t => t.owner === id);
     const subs = (window.TASKS || []).filter(t => (t.subs || []).includes(id));
     const total = owned.length + subs.length;
@@ -388,12 +399,12 @@ function App() {
               onEditProject={openProject}
               onCreateProject={openCreateProject}/>
           )}
-          {!showProjectsList && view === "dashboard" && <DashboardScreen onOpenTask={openTask} onOpenResource={openResource}/>}
+          {!showProjectsList && view === "dashboard" && <DashboardScreen onOpenTask={openTask} onOpenResource={openResource} onCreateTask={openCreate} onGoView={setView}/>}
           {!showProjectsList && view === "table" &&     <TableScreen onOpenTask={openTask} onCreateTask={openCreate} askDeleteTask={askDeleteTask} askConfirm={askConfirm} closeConfirm={closeConfirm}/>}
           {!showProjectsList && view === "gantt" &&     <GanttScreen tweaks={tweaks} onOpenTask={openTask} onCreateTask={openCreate} selectedId={openTaskId}/>}
           {!showProjectsList && view === "calendar" &&  <CalendarScreen onOpenTask={openTask}/>}
           {!showProjectsList && view === "settings" &&  <SettingsScreen askDeleteCalendar={askDeleteCalendar} askDeleteHoliday={askDeleteHoliday}/>}
-          {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask} onOpenResource={openResource} onCreateResource={openCreateResource}/>}
+          {!showProjectsList && view === "resources" && <ResourcesScreen onOpenTask={openTask} onOpenResource={openResource} onCreateResource={openCreateResource} askDeleteResource={askDeleteResource}/>}
         </div>
       </main>
 
@@ -550,7 +561,14 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
 
 // ─────────── UserMenu (sidebar foot) ───────────
 function UserMenu({ collapsed, onOpenProfile, onLogout }) {
-  const me = (window.RESOURCES || []).find(r => r.id === CURRENT_USER_ID) || RESOURCES[0];
+  // Subscribe so the menu re-renders when resources change. The current
+  // user could have been deleted (mock doesn't truly prevent it, but we
+  // try to — see askDeleteResource); fall back to a generic placeholder
+  // rather than crash.
+  const resources = useResources();
+  const me = resources.find(r => r.id === CURRENT_USER_ID)
+    || resources[0]
+    || { id: "_none", name: "ゲスト", enName: "guest", role: "—", color: "#8C8B85" };
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
 
