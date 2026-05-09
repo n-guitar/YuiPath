@@ -274,6 +274,7 @@ function Icon({ name, size = 16, className }) {
     info:        <><circle cx="12" cy="12" r="9" /><path d="M12 8h0" /><path d="M11 12h1v5h1" /></>,
     sun:         <><circle cx="12" cy="12" r="4" /><path d="M12 3v2" /><path d="M12 19v2" /><path d="M3 12h2" /><path d="M19 12h2" /><path d="M5.6 5.6l1.4 1.4" /><path d="M17 17l1.4 1.4" /><path d="M5.6 18.4l1.4-1.4" /><path d="M17 7l1.4-1.4" /></>,
     moon:        <><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></>,
+    grip:        <><path d="M9 6h0" /><path d="M15 6h0" /><path d="M9 12h0" /><path d="M15 12h0" /><path d="M9 18h0" /><path d="M15 18h0" /></>,
   };
   return (
     <svg className={"pw-icon " + (className||"")} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

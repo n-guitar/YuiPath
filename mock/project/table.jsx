@@ -237,6 +237,109 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
     else if (advance === "down") moveFocus(1, 0);
   };
 
+  // ─── Row drag-reorder ───
+  // dragSrc = id of the task being dragged. dropAt = { id, position } of the
+  // target row. Both stored in a ref for fast pointermove updates, mirrored
+  // into state so the indicator re-renders. Drop commits via reorderTasks.
+  const dragRef = React.useRef(null);
+  const [dragSrc, setDragSrc] = React.useState(null);
+  const [dropAt, setDropAt] = React.useState(null);
+
+  // Reorder a contiguous block (a phase + its subsequent leaves, or just
+  // a single leaf) to land before/after the target task. Leaves get
+  // re-parented to whichever phase ends up immediately above them.
+  const reorderTasks = (sourceId, targetId, position) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    setTasks(prev => {
+      const fromIdx = prev.findIndex(t => t.id === sourceId);
+      if (fromIdx < 0) return prev;
+      const source = prev[fromIdx];
+      // Compute the block to move:
+      // - phase: phase + its subsequent contiguous leaves
+      // - leaf: just itself
+      let blockEnd = fromIdx + 1;
+      if (source.isPhase) {
+        while (blockEnd < prev.length && !prev[blockEnd].isPhase) blockEnd++;
+      }
+      const block = prev.slice(fromIdx, blockEnd);
+      const blockIds = new Set(block.map(t => t.id));
+      // Drop target must not be inside the moved block (would be a no-op).
+      if (blockIds.has(targetId)) return prev;
+      const remaining = [...prev.slice(0, fromIdx), ...prev.slice(blockEnd)];
+      const targetIdx = remaining.findIndex(t => t.id === targetId);
+      if (targetIdx < 0) return prev;
+      let insertIdx = position === "before" ? targetIdx : targetIdx + 1;
+
+      // Re-parent a leaf if it crosses phase boundaries — find the most
+      // recent phase strictly before the insertion point.
+      if (!source.isPhase) {
+        let parentPhase = null;
+        for (let i = insertIdx - 1; i >= 0; i--) {
+          if (remaining[i].isPhase) { parentPhase = remaining[i]; break; }
+        }
+        // No phase above → can't drop a leaf at the very top; bail.
+        if (!parentPhase) return prev;
+        block[0] = { ...block[0], parent: parentPhase.id };
+      }
+      // A phase moving up past row 0 stays a phase — no parent munging needed.
+
+      return [
+        ...remaining.slice(0, insertIdx),
+        ...block,
+        ...remaining.slice(insertIdx),
+      ];
+    });
+    flashSaved();
+  };
+
+  const beginRowDrag = (e, taskId) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (_) {}
+    dragRef.current = {
+      id: taskId, pointerId: e.pointerId, target: e.currentTarget, moved: false,
+    };
+    setDragSrc(taskId);
+    document.body.classList.add("pw-dragging-row");
+  };
+
+  const onRowPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    d.moved = true;
+    // Hit-test: find the rownum cell whose vertical span contains clientY.
+    // Excludes the header's rownum stub and the bottom append-row stub so
+    // foundIdx aligns with the displayed[] array. Iterating ~17 rows per
+    // move is cheap.
+    const cells = document.querySelectorAll(".pw-table-grid .pw-tg-cell--rownum:not(.pw-tg-cell--head):not(.pw-tg-cell--append)");
+    let foundIdx = -1, foundPos = "before";
+    for (let i = 0; i < cells.length; i++) {
+      const r = cells[i].getBoundingClientRect();
+      if (e.clientY >= r.top && e.clientY <= r.bottom) {
+        foundIdx = i;
+        foundPos = (e.clientY - r.top) < r.height / 2 ? "before" : "after";
+        break;
+      }
+    }
+    if (foundIdx >= 0) {
+      const targetTask = displayed[foundIdx];
+      if (targetTask) setDropAt({ id: targetTask.id, position: foundPos });
+    }
+  };
+
+  const endRowDrag = () => {
+    const d = dragRef.current;
+    document.body.classList.remove("pw-dragging-row");
+    if (d && dragSrc && dropAt && dropAt.id !== dragSrc) {
+      reorderTasks(dragSrc, dropAt.id, dropAt.position);
+    }
+    try { d?.target?.releasePointerCapture?.(d?.pointerId); } catch (_) {}
+    dragRef.current = null;
+    setDragSrc(null);
+    setDropAt(null);
+  };
+
   // Indent / outdent
   const indent = (taskId) => {
     setTasks(prev => {
@@ -463,6 +566,11 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
               onContextMenu={(e) => openContextAt(e, task.id, ri)}
               onOpenTask={onOpenTask}
               isFirstOfPhase={ri === 0 || displayed[ri-1]?.isPhase !== task.isPhase || (task.isPhase && true)}
+              isDragSrc={dragSrc === task.id}
+              dropPosition={dropAt?.id === task.id ? dropAt.position : null}
+              onRowPointerDown={(e) => beginRowDrag(e, task.id)}
+              onRowPointerMove={onRowPointerMove}
+              onRowPointerUp={endRowDrag}
             />
           ))}
 
@@ -555,13 +663,21 @@ function TableScreen({ onOpenTask, onCreateTask, askDeleteTask, askConfirm, clos
 }
 
 // ─────────── Single row ───────────
-function TableRow({ task, rowIdx, focus, editing, onCellClick, onCellDoubleClick, onCommit, onCancel, onSetDraft, onContextMenu, onOpenTask }) {
+function TableRow({ task, rowIdx, focus, editing, onCellClick, onCellDoubleClick, onCommit, onCancel, onSetDraft, onContextMenu, onOpenTask, isDragSrc, dropPosition, onRowPointerDown, onRowPointerMove, onRowPointerUp }) {
   const isPhase = task.isPhase;
+  const dropClass = dropPosition === "before" ? " pw-tg-row--drop-before"
+                  : dropPosition === "after"  ? " pw-tg-row--drop-after"
+                  : "";
   return (
     <>
-      <div className={"pw-tg-cell pw-tg-cell--rownum" + (isPhase ? " pw-tg-cell--phase" : "")}
-           onContextMenu={onContextMenu}>
+      <div className={"pw-tg-cell pw-tg-cell--rownum" + (isPhase ? " pw-tg-cell--phase" : "") + (isDragSrc ? " pw-tg-cell--drag-src" : "") + dropClass}
+           onContextMenu={onContextMenu}
+           onPointerDown={onRowPointerDown}
+           onPointerMove={onRowPointerMove}
+           onPointerUp={onRowPointerUp}
+           onPointerCancel={onRowPointerUp}>
         <span className="pw-tg-rownum">{rowIdx + 1}</span>
+        <span className="pw-tg-rowgrip" aria-hidden="true"><Icon name="grip" size={14}/></span>
         <button className="pw-tg-rowmenu" onClick={onContextMenu}><Icon name="moreH" size={12}/></button>
       </div>
       {TABLE_COLUMNS.map((col, ci) => {
@@ -576,10 +692,11 @@ function TableRow({ task, rowIdx, focus, editing, onCellClick, onCellDoubleClick
             onCommit={onCommit} onCancel={onCancel} onSetDraft={onSetDraft}
             onContextMenu={onContextMenu}
             onOpenTask={onOpenTask}
+            extraClass={(isDragSrc ? "pw-tg-cell--drag-src " : "") + dropClass.trim()}
           />
         );
       })}
-      <div className={"pw-tg-cell pw-tg-cell--filler" + (isPhase ? " pw-tg-cell--phase" : "")}
+      <div className={"pw-tg-cell pw-tg-cell--filler" + (isPhase ? " pw-tg-cell--phase" : "") + (isDragSrc ? " pw-tg-cell--drag-src" : "") + dropClass}
            onContextMenu={onContextMenu}>
         {isPhase && <span className="pw-tg-phase-meta">{Math.round(task.progress*100)}%</span>}
       </div>
@@ -588,7 +705,7 @@ function TableRow({ task, rowIdx, focus, editing, onCellClick, onCellDoubleClick
 }
 
 // ─────────── Cell ───────────
-function Cell({ task, col, isFocused, isEditing, editing, onClick, onDoubleClick, onCommit, onCancel, onSetDraft, onContextMenu, onOpenTask }) {
+function Cell({ task, col, isFocused, isEditing, editing, onClick, onDoubleClick, onCommit, onCancel, onSetDraft, onContextMenu, onOpenTask, extraClass }) {
   const isPhase = task.isPhase;
   const editable = !isPhase || PHASE_EDITABLE.includes(col.key);
   const cls = [
@@ -599,6 +716,7 @@ function Cell({ task, col, isFocused, isEditing, editing, onClick, onDoubleClick
     isEditing && "pw-tg-cell--editing",
     !editable && "pw-tg-cell--ro",
     col.sticky && "pw-tg-cell--sticky",
+    extraClass,
   ].filter(Boolean).join(" ");
 
   if (isEditing) {

@@ -3558,10 +3558,32 @@ body.pw-dragging-resize * { cursor: ew-resize !important; }
   font-size: 11px;
   justify-content: space-between;
   padding: 0 4px 0 8px;
-  cursor: pointer;
+  cursor: grab;
+  position: relative;
 }
+.pw-tg-cell--rownum:active { cursor: grabbing; }
 .pw-tg-cell--rownum:hover .pw-tg-rowmenu { opacity: 1; }
-.pw-tg-rownum { font-variant-numeric: tabular-nums; }
+/* On hover, swap the row number for a grip glyph so the drag affordance
+   is obvious. Both share the same slot. */
+.pw-tg-rownum {
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.08s;
+}
+.pw-tg-rowgrip {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.08s;
+}
+.pw-tg-cell--rownum:hover .pw-tg-rownum { opacity: 0; }
+.pw-tg-cell--rownum:hover .pw-tg-rowgrip { opacity: 0.9; }
+
 .pw-tg-rowmenu {
   background: transparent; border: 0; padding: 2px;
   color: var(--text-tertiary); cursor: pointer;
@@ -3569,6 +3591,21 @@ body.pw-dragging-resize * { cursor: ew-resize !important; }
   border-radius: 3px;
 }
 .pw-tg-rowmenu:hover { background: var(--border); color: var(--text-1); }
+
+/* Source row of an in-flight drag: dimmed so the user can see where
+   the line indicator is taking it. */
+.pw-tg-cell--drag-src { opacity: 0.4; }
+
+/* Drop indicator — drawn as a 2px accent line via box-shadow on the
+   rownum cell. box-shadow extends visually outside the cell box without
+   affecting layout, so the line reads from the row's left edge. */
+.pw-tg-row--drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.pw-tg-row--drop-after  { box-shadow: 0 2px 0 0 var(--accent); }
+
+/* While reordering, freeze cursor as grabbing across the whole window
+   so it doesn't flicker back to default when crossing other elements. */
+body.pw-dragging-row,
+body.pw-dragging-row * { cursor: grabbing !important; user-select: none; }
 
 .pw-tg-cell--sticky {
   position: sticky; left: 28px;
