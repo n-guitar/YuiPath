@@ -126,14 +126,14 @@ function YuiPathMark({ size = 28, animated = false, className = "" }) {
 
 // "YuiPath" wordmark. Inlined SVG (not <img>) so the document-loaded Nunito
 // is reachable — <img>-loaded SVGs are sandboxed from external fonts.
-// Colors are intentionally brand-fixed (not --accent themed) to keep the
-// mark consistent with the smile SVGs.
+// "Yui" inherits currentColor (so it follows the surrounding text color
+// and adapts to light/dark themes); "Path" stays the brand blue.
 //
 // viewBox is tightened to fit the actual letter glyphs (Nunito 800 caps run
 // roughly y=22..62, no descenders in "YuiPath"). The original SVG used
 // viewBox="0 0 220 80" with ~30 units of vertical whitespace, which made
 // the rendered text feel small even at substantial heights.
-function YuiPathWordmark({ height = 28, color = "#1E293B", accent = "#3B82F6" }) {
+function YuiPathWordmark({ height = 28, color = "currentColor", accent = "#3B82F6" }) {
   // Cropped viewBox: 0 22 178 42  (aspect ~4.24 : 1)
   const width = Math.round(height * 178 / 42);
   return (
@@ -272,6 +272,8 @@ function Icon({ name, size = 16, className }) {
     edit:        <><path d="M14 4l6 6-12 12H2v-6z" /><path d="M12 6l6 6" /></>,
     globe:       <><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" /></>,
     info:        <><circle cx="12" cy="12" r="9" /><path d="M12 8h0" /><path d="M11 12h1v5h1" /></>,
+    sun:         <><circle cx="12" cy="12" r="4" /><path d="M12 3v2" /><path d="M12 19v2" /><path d="M3 12h2" /><path d="M19 12h2" /><path d="M5.6 5.6l1.4 1.4" /><path d="M17 17l1.4 1.4" /><path d="M5.6 18.4l1.4-1.4" /><path d="M17 7l1.4-1.4" /></>,
+    moon:        <><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></>,
   };
   return (
     <svg className={"pw-icon " + (className||"")} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

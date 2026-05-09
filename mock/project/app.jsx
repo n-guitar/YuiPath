@@ -18,20 +18,43 @@ function App() {
     "primaryColor": "#3D6BE0",
     "density": "comfortable",
     "ganttZoom": "week",
-    "sidebarCollapsed": false
+    "sidebarCollapsed": false,
+    "theme": "auto"
   }/*EDITMODE-END*/);
   const tweaks = { t, setTweak, ganttZoom: t.ganttZoom };
 
-  // Apply primary color to CSS var
+  // Resolve "auto" to the OS preference, and react when it changes.
+  // `effectiveTheme` is what we actually paint ("light" or "dark").
+  const [systemDark, setSystemDark] = React.useState(() =>
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false);
   React.useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  const effectiveTheme = t.theme === "dark" ? "dark"
+                       : t.theme === "light" ? "light"
+                       : (systemDark ? "dark" : "light");
+
+  // Apply theme + density + accent vars. Dark mode bumps the accent-soft
+  // alpha so the tinted backgrounds (filter chips, hover states) keep
+  // their visual presence on a dark surface.
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = effectiveTheme;
+    document.documentElement.dataset.density = t.density;
     document.documentElement.style.setProperty("--accent", t.primaryColor);
     const rgb = hexToRgb(t.primaryColor);
     if (rgb) {
-      document.documentElement.style.setProperty("--accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.10)`);
-      document.documentElement.style.setProperty("--accent-soft-2", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.18)`);
+      const a1 = effectiveTheme === "dark" ? 0.18 : 0.10;
+      const a2 = effectiveTheme === "dark" ? 0.30 : 0.18;
+      document.documentElement.style.setProperty("--accent-soft", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a1})`);
+      document.documentElement.style.setProperty("--accent-soft-2", `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a2})`);
     }
-    document.documentElement.dataset.density = t.density;
-  }, [t.primaryColor, t.density]);
+  }, [t.primaryColor, t.density, effectiveTheme]);
 
   // null = signed in. Otherwise one of "login" | "signup" | "forgot".
   // Default starts signed-in so the demo lands on the work surface.
@@ -367,6 +390,8 @@ function App() {
         onCreateProject={openCreateProject}
         onOpenSettings={() => { setView("settings"); setShowProjectsList(false); closeTask(); }}
         onOpenProfile={() => { closeTask(); openResource(CURRENT_USER_ID); }}
+        theme={t.theme || "auto"}
+        onThemeChange={(v) => setTweak("theme", v)}
         onLogout={() => askConfirm({
           title: "ログアウトしますか？",
           body: <p>このセッションを終了します。未保存の変更は失われる可能性があります。</p>,
@@ -437,7 +462,7 @@ function App() {
 }
 
 // ─────────── Sidebar ───────────
-function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, onShowProjectsList, onSwitchProject, onCreateProject, onOpenSettings, onOpenProfile, onLogout }) {
+function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, onShowProjectsList, onSwitchProject, onCreateProject, onOpenSettings, onOpenProfile, theme, onThemeChange, onLogout }) {
   const projects = useProjects();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const switchRef = React.useRef(null);
@@ -553,6 +578,8 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
         <UserMenu
           collapsed={collapsed}
           onOpenProfile={onOpenProfile}
+          theme={theme}
+          onThemeChange={onThemeChange}
           onLogout={onLogout}/>
       </div>
     </aside>
@@ -560,7 +587,7 @@ function Sidebar({ nav, active, onNav, collapsed, onToggle, showProjectsList, on
 }
 
 // ─────────── UserMenu (sidebar foot) ───────────
-function UserMenu({ collapsed, onOpenProfile, onLogout }) {
+function UserMenu({ collapsed, onOpenProfile, theme, onThemeChange, onLogout }) {
   // Subscribe so the menu re-renders when resources change. The current
   // user could have been deleted (mock doesn't truly prevent it, but we
   // try to — see askDeleteResource); fall back to a generic placeholder
@@ -617,6 +644,27 @@ function UserMenu({ collapsed, onOpenProfile, onLogout }) {
             <Icon name="users" size={14}/>
             <span>プロフィール</span>
           </button>
+          {onThemeChange && (
+            <div className="pw-user-menu__theme">
+              <span className="pw-user-menu__theme-label">テーマ</span>
+              <div className="pw-seg" role="group" aria-label="テーマ">
+                {[
+                  { value: "auto",  label: "自動", icon: "settings" },
+                  { value: "light", label: "ライト", icon: "sun" },
+                  { value: "dark",  label: "ダーク", icon: "moon" },
+                ].map(opt => (
+                  <button key={opt.value}
+                    className={"pw-seg__btn" + ((theme || "auto") === opt.value ? " is-active" : "")}
+                    onClick={() => onThemeChange(opt.value)}
+                    title={opt.label}
+                    type="button">
+                    <Icon name={opt.icon} size={13}/>
+                    <span className="pw-seg__btn-label">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="pw-user-menu__divider"/>
           <button className="pw-user-menu__item pw-user-menu__item--danger" onClick={pick(onLogout)}>
             <Icon name="close" size={14}/>
@@ -963,6 +1011,15 @@ function MembersButton({ onOpenResource }) {
 function YuiPathTweaks({ t, setTweak }) {
   return (
     <TweaksPanel title="Tweaks">
+      <TweakSection label="テーマ">
+        <TweakRadio label="モード" value={t.theme || "auto"}
+          onChange={(v) => setTweak("theme", v)}
+          options={[
+            { value: "auto",  label: "自動" },
+            { value: "light", label: "ライト" },
+            { value: "dark",  label: "ダーク" },
+          ]}/>
+      </TweakSection>
       <TweakSection label="カラー">
         <TweakColor label="プライマリ" value={t.primaryColor}
           onChange={(v) => setTweak("primaryColor", v)}

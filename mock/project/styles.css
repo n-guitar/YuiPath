@@ -48,6 +48,41 @@
   --topbar-h: 56px;
 }
 
+/* ─────────── Dark theme overrides ─────────── */
+/* Activated by data-theme="dark" on <html>. App.jsx applies it based on
+   the user's tweaks setting (or `prefers-color-scheme` when "auto"). */
+[data-theme="dark"] {
+  --bg:           #0F1014;
+  --surface:      #15171C;
+  --surface-2:    #1B1D24;
+  --surface-3:    #25272F;
+  --border:       #2A2D36;
+  --border-soft:  #22252D;
+  --border-strong:#3A3D47;
+  --text:         #E8E8EB;
+  --text-2:       #B5B5BA;
+  --text-tertiary:#8B8B91;
+  --muted:        #5C5C62;
+
+  /* accent stays as user-tweaked; soft alpha is bumped by app.jsx */
+
+  --critical-soft:rgba(220,76,63,0.18);
+  --warn-soft:    rgba(197,127,26,0.18);
+  --success-soft: rgba(42,140,110,0.20);
+
+  /* Shadows mostly disappear into the bg in dark mode — use a thin
+     border (via the existing 1px box-shadow trick) for separation. */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.5), 0 1px 1px rgba(0,0,0,0.3);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-3: 0 12px 28px rgba(0,0,0,0.6), 0 4px 8px rgba(0,0,0,0.4);
+
+  /* Backdrops need higher alpha on a dark surface so they read as
+     "dim the layer behind". Hardcoded colors of the underlying widgets
+     (status pills, gantt bars, etc.) stay readable underneath. */
+  --backdrop:      rgba(0,0,0,0.65);
+  --backdrop-soft: rgba(0,0,0,0.55);
+}
+
 [data-density="compact"] {
   --row-h: 28px;
 }
@@ -663,6 +698,51 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pw-user-menu__item--danger { color: var(--critical); }
 .pw-user-menu__item--danger:hover { background: var(--critical-soft); color: var(--critical); }
 .pw-user-menu__item--danger .pw-icon { color: var(--critical); }
+
+/* Theme segmented control inside the user menu */
+.pw-user-menu__theme {
+  padding: 6px 10px 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pw-user-menu__theme-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+/* Segmented control — 3 equal buttons in a track */
+.pw-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+}
+.pw-seg__btn {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.pw-seg__btn:hover { color: var(--text-2); }
+.pw-seg__btn.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.pw-seg__btn .pw-icon { flex-shrink: 0; }
+.pw-seg__btn-label { white-space: nowrap; }
 
 /* ─────────── Buttons ─────────── */
 .pw-btn {
@@ -2324,7 +2404,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  background: rgba(255,255,255,0.85);
+  /* Translucent surface plate so the text reads cleanly on any bar color
+     in both light/dark themes. */
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -2590,7 +2672,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .pw-confirm__backdrop {
   position: absolute; inset: 0;
-  background: rgba(20,20,20,0.32);
+  background: var(--backdrop, rgba(20,20,20,0.32));
 }
 .pw-confirm__card {
   position: relative;
@@ -2651,7 +2733,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ─────────── Drawer ─────────── */
 .pw-drawer__backdrop {
   position: fixed; inset: 0;
-  background: rgba(20,20,20,0.18);
+  background: var(--backdrop-soft, rgba(20,20,20,0.18));
   z-index: 50;
   animation: pw-fade 0.15s ease;
 }
