@@ -36,7 +36,8 @@ YuiPath プロジェクトの**設計上の重要な決定**を、決定した�
 
 ## ルール
 
-- ADR は **immutable**。変更したい場合は新しい ADR を起こして「Supersedes #NNNN」と明記
+- Accepted 状態の ADR は **immutable**。変更したい場合は新しい ADR を起こして「Supersedes #NNNN」と明記
+- Proposed 状態の ADR は議論中のドラフトとして訂正可 (Updated: タイムスタンプを先頭に追記)
 - ファイル名: `NNNN-kebab-case-title.md`（番号は連番）
 - Status は `Proposed` で書き始め、合意したら `Accepted` に
 - 撤回した場合は `Deprecated` （理由を本文に）
@@ -56,6 +57,7 @@ YuiPath プロジェクトの**設計上の重要な決定**を、決定した�
 | [0009](./0009-mcp-server-strands-agentcore.md) | MCP server の実装手段 — Strands Agents (ローカル) → Bedrock AgentCore (リモート) | Proposed |
 | [0010](./0010-mcp-first-and-read-write-separation.md) | MCP を第一級 API 表面に / 参照・更新の分離 | Proposed |
 | [0011](./0011-roles-and-permissions.md) | ロールと権限分離 (system_admin / project_admin / project_member) | Proposed |
+| [0012](./0012-domain-entities.md) | ドメインエンティティ確定 (mock 由来、AI UI なし、Activity = EventLog view) | Proposed |
 
 ## 参考
 

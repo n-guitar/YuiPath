@@ -2,7 +2,8 @@
 
 - Status: Proposed
 - Date: 2026-05-09
-- Related: ADR-0010 (MCP-first と read/write 分離)
+- Updated: 2026-05-09 (mock 分析後の訂正、ADR-0012 と並行確定)
+- Related: ADR-0010 (MCP-first と read/write 分離), ADR-0012 (ドメインエンティティ確定)
 
 ## Context
 
@@ -21,6 +22,12 @@ ADR-0010 で read/write scope を分離したが、**「誰が何をできるか
 - Org / Workspace 階層は作らない（シンプルさ優先、必要になった時点で ADR で検討）
 - system_admin はデータ閲覧を escalation 制にするか → **しない**。信頼前提、event log で足りる
 - 複数 admin・ロール変更を許すか → 両方許す（単独 admin は SPOF、組織は変わる）
+
+訂正履歴（2026-05-09 追記）:
+
+- mock/project/data.jsx 分析により、「Resource」と「Member」は同一概念と確定。本 ADR では **Member** で統一
+- mock に「独立 calendar event entity」は存在しないため、当初記載した Calendar event の権限行を削除
+- 「自分のタスク」 = `task.owner == self OR self ∈ task.subs` と明記
 
 ## Decision
 
@@ -44,9 +51,9 @@ project_member   そのプロジェクトの参加者
 |---|---|
 | system_admin | 全プロジェクトの全データ（タスク本文・コメント含む） |
 | project_admin / member | 所属プロジェクトの全データ |
-| 非所属 | 見えない |
+| 非所属 | 何も見えない |
 
-権限を細切れにしない。見える/見えないの線は「プロジェクト所属の有無 + system_admin フラグ」だけ。
+権限を細切れにしない。見える/見えないの線は **プロジェクト所属の有無 + system_admin フラグ** だけ。Event Log (監査ログ) も同じルールで見える。
 
 #### 書き
 
@@ -54,19 +61,30 @@ project_member   そのプロジェクトの参加者
 
 > **「自分のものだけ書ける。admin は他人のものも書ける。」**
 
+**「自分の task」の定義** (重要):
+
+```
+task が 「自分のもの」 ⇔ task.owner == self OR self ∈ task.subs
+```
+
+- owner (主担当) だけでなく subs (副担当) も含む。副担当も実務的にタスクを進めるため
+- creator (作成者) は権限に関係しない。移譲後の責任所在を owner/subs に一元化
+
 | 書込対象 | system_admin | project_admin | project_member |
 |---|---|---|---|
-| プロジェクト設定 | ✓ (全) | ✓ (自プロジェクト) | ✗ |
-| メンバー追加/削除 | ✓ | ✓ (自プロジェクト) | ✗ |
-| 任意の task ・ resource ・ event の CRUD | ✓ | ✓ (自プロジェクト) | ✗ |
-| 他人の comment 削除 | ✓ | ✓ (自プロジェクト) | ✗ |
-| 自分が assignee の task の更新/削除 | ✓ | ✓ | ✓ |
+| プロジェクト設定 (名前・説明・外見・カレンダーテンプレート) | ✓ (全) | ✓ (自プロジェクト) | ✗ |
+| Member 追加/削除/ロール変更 | ✓ | ✓ (自プロジェクト) | ✗ |
+| 任意の task ・ comment の CRUD（他人作成も含む） | ✓ | ✓ (自プロジェクト) | ✗ |
+| 「自分の task」 (owner OR subs) の更新/削除 | ✓ | ✓ | ✓ |
 | 自分の comment の編集/削除 | ✓ | ✓ | ✓ |
-| task の作成 (assignee = self or 未割当) | ✓ | ✓ | ✓ |
-| task の assignee 変更 (他人への振り替え) | ✓ | ✓ | ✗※ |
-| 自分の assignee を外す (未割当に戻す) | ✓ | ✓ | ✓ |
+| task の作成 (owner = self or 未割当) | ✓ | ✓ | ✓ |
+| task の owner / subs 変更 (他人への振り替え) | ✓ | ✓ | ✗※ |
+| 自分を owner/subs から外す (未割当 or subs 除去) | ✓ | ✓ | ✓ |
+| Event Log の書込 | (全て自動、API なし) | — | — |
 
-※ project_member は、自分が assignee の task を「未割当に戻す」のみ可。他人への振り替えは admin 权限。
+※ project_member は、「自分を外す」方向のみ可。他人への振り替えは admin 権限。
+
+※※ Calendar event は独立エンティティとして存在しないため、本表から削除した。スケジュール関連は全て task と CalendarTemplate で表現 (ADR-0012 参照)。
 
 ### 複数 admin・ロール変更
 
@@ -92,7 +110,7 @@ project_member   そのプロジェクトの参加者
    | project_member ↔ project_admin | project_admin or system_admin |
    | system_admin の付与・剥奪 | system_admin のみ |
 
-4. **ロール変更は必ず event log に記録**
+4. **ロール変更は必ず Event Log に記録**
    - 誰が、いつ、誰のロールを、何から何に変えたか
    - これで監査要件を満たす
 
@@ -100,7 +118,7 @@ project_member   そのプロジェクトの参加者
 
 | 状況 | 振舞い |
 |---|---|
-| project_member が脱退 | OK。assignee だった task は orphan flag が立ち、admin が再アサイン |
+| project_member が脱退 | OK。owner / subs に含まれていた task は orphan flag が立ち、admin が再アサイン |
 | project_admin が脱退（他にも admin あり） | OK |
 | project_admin が脱退（最後の 1 人） | ブロック。先に他メンバーを admin にする必要 |
 | system_admin が退会（他にもいる） | OK |
@@ -110,8 +128,8 @@ project_member   そのプロジェクトの参加者
 
 - 他人のプロジェクトのタスク本文もコメントも見える
 - escalation フローや同意ステップは作らない
-- **信頼前提と運用責任で担保し、event log で事後検証可能にする**
-- system_admin の読みアクセスも event log に記録される（「誰がいつ何を見たか」を project_admin が事後確認できる）
+- **信頼前提と運用責任で担保し、Event Log で事後検証可能にする**
+- system_admin の読みアクセスも Event Log に記録される（「誰がいつ何を見たか」を project_admin が事後確認できる）
 
 ### MCP scope と role は別軸
 
@@ -139,7 +157,7 @@ s.*    システム書き                (token: system のみ)
   "_meta": {
     "yuipath:requiredScope": "write",
     "yuipath:requiredRole": "member",
-    "yuipath:ownership": "assignee_or_admin"
+    "yuipath:ownership": "owner_or_subs_or_admin"
   }
 }
 {
@@ -194,8 +212,9 @@ s.*    システム書き                (token: system のみ)
 - 覆えるルールは実質 **2 つだけ**: 「最後の admin は降格不可」「自分の昇格不可」
 - 単独 admin の SPOF リスクを陥らず、複数 admin と動的ロール変更を両立
 - read-only LLM bot / dashboard に `read` token を渡しただけで事故防止が効く
-- system_admin の動きも event log で事後検証可能、信頼と透明性のバランスが取れる
+- system_admin の動きも Event Log で事後検証可能、信頼と透明性のバランスが取れる
 - Pattern A と B でコードを分けず、UI 表示だけで出し分けられる
+- 「owner OR subs」と明記したことで、副担当の勤務フローが自然に表現される
 
 ### Accepted (negative)
 
@@ -203,6 +222,7 @@ s.*    システム書き                (token: system のみ)
 - escalation フローがないため、コンプライアンス要件で「データ閲覧には上位者承認が必要」と言われたら ADR 追加で対応
 - viewer ロールがないため「読みだけ参加させたい人」は bot ユーザー + read scope token を採らないと表現できない
 - Org / Workspace を後から入れると、ユーザー・プロジェクト・メンバーシップの関係を全体調整するマイグレーションが必要
+- subs も「自分の task」に含めたため、副担当が多数設定されると「複数人が全員書込める」状態になる → ADR-0010 の expected_version (optimistic locking) でコンフリクト検出
 
 ## Risks
 
@@ -210,9 +230,9 @@ s.*    システム書き                (token: system のみ)
 - 被害がインスタンス全体に及ぶ
 - **緩和**: system_admin には MFA 必須、`system` scope token は短寿命・使用ごとに発行、長期 token を禁止
 
-### 「自分のもの」の定義ブレ
-- assignee が代わった後に「作成者だった人」が「自分の task」と思い込む
-- **緩和**: 「自分のもの」 = **assignee = self**、と一点だけで定める。creator フラグは権限に使わない
+### 「自分の task」の定義ブレ
+- owner が代わった、もしくは subs から外された人が以前の記憶で「自分の task」と思う
+- **緩和**: 「自分の task」 ⇔ `task.owner == self OR self ∈ task.subs` の一点だけで定める。スナップショットの帰属ではなく現在の状態で判定。UI も「あなたはこの task の owner/subs です」を明示
 
 ### 複数 admin の互い違いの設定上書き
 - A が設定したものを B がその直後上書きしてトラブル
@@ -234,3 +254,4 @@ s.*    システム書き                (token: system のみ)
 - ADR-0010 (MCP-first と read/write 分離) — token scope の定義を本 ADR で 4 個に拡張
 - ADR-0006 (Storage と Event Log の trait 抽象化) — `MembershipReader` trait を追加予定
 - ADR-0008 (Codegen) — MCP manifest の `_meta.yuipath:requiredRole` / `yuipath:ownership` / `yuipath:guards` 出力に適用
+- ADR-0012 (ドメインエンティティ確定) — 本 ADR の「Member」「task owner/subs」「Event Log」は ADR-0012 でエンティティとして確定
