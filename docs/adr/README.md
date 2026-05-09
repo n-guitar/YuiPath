@@ -53,6 +53,7 @@ YuiPath プロジェクトの**設計上の重要な決定**を、決定した�
 | [0006](./0006-storage-and-event-trait-abstraction.md) | Storage と Event Log を trait で抽象化 | Proposed |
 | [0007](./0007-local-dev-environment.md) | ローカル開発環境（cargo-lambda + LocalStack） | Proposed |
 | [0008](./0008-types-and-schema-codegen.md) | 型・スキーマ・API 契約は Rust → TS への一方向 codegen で統一 | Proposed |
+| [0009](./0009-mcp-server-strands-agentcore.md) | MCP server の実装手段 — Strands Agents (ローカル) → Bedrock AgentCore (リモート) | Proposed |
 
 ## 参考
 
