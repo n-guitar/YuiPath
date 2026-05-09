@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-**YuiPath** — planned OSS project management tool (MS Project / ProjectLibre alternative). The full product hasn't been built yet. This repo currently contains:
+**YuiPath** — OSS project management tool (MS Project / ProjectLibre alternative). The real implementation hasn't been built yet. This repo currently contains:
 
-- `mock/project/` — a fully-working **HTML/CSS/JS mock** that's the active design surface. All current iteration happens here.
-- `docs/adr/` — Architecture Decision Records describing the planned product (Tauri + Rust + AWS, MCP for AI).
-- `mock/chats/issue.md` — long-form transcripts of the original product planning (read this for full context on why design choices were made).
+- `mock/project/` — a fully-working **HTML/CSS/JS mock**. As of 2026-05-09 the **mock phase is complete**; this codebase is now the canonical product UX spec for the upcoming real implementation. Further mock changes should be limited to UX spec follow-ups, not new features.
+- `docs/adr/` — Architecture Decision Records describing the planned product (Tauri + Rust + AWS, MCP for AI, Apache 2.0).
+- `mock/chats/issue.md` — long-form transcripts of the original product planning (read this for full context on why product / scope decisions were made).
+- `mock/chats/chat1.md` — design-iteration dialogue (UI rationale, layout decisions).
 
-The mock is the prototype that defines the product's UX; the real implementation will be a separate codebase per ADR-0001 (Tauri 2.0 + React/TS frontend with shared Rust→WASM PM core, plus an AWS Pattern B with DynamoDB On-Demand).
+The real implementation will be a separate codebase per [ADR-0001](docs/adr/0001-deployment-patterns.md): Tauri 2.0 + React/TS frontend with shared Rust→WASM PM core (Pattern A, local), plus an AWS Pattern B with DynamoDB On-Demand for cloud sync.
 
 ## Running the mock
 
@@ -66,6 +67,8 @@ App holds a `view` string (`"dashboard" | "table" | "gantt" | "calendar" | "reso
 
 Drawers are rendered as overlays at the App root, not inside their originating view. Each drawer subscribes to its store inside its component so live edits propagate without prop drilling.
 
+There is also an `authView` state (`null | "login" | "signup" | "forgot"`). When non-null, App renders `<AuthShell>` instead of the main shell — the entire app is hidden behind auth. Logout sets `authView = "login"`; successful submit sets it back to `null`. The auth screens are pure mock (no real authentication, no validation, submit is just a state transition).
+
 ### Confirmation dialogs
 
 A single App-level `confirm` state drives the shared `ConfirmDialog`. Each destructive action has an `askDelete*(id)` wrapper that surfaces blast radius (cascade counts) and calls `askConfirm({...})`. Pattern is uniform across task / resource / project / comment / calendar / holiday deletes.
@@ -95,6 +98,60 @@ The dashboard "要注意 (今)" panel is driven by an array `DETECTORS_NOW`. Eac
 - `CURRENT_USER_ID = "r1"` — mock auth (田中 美咲)
 
 Changing these shifts the entire demo's time horizon consistently.
+
+### Theme system
+
+Three modes: `auto | light | dark`, persisted in tweaks. App's effect resolves `auto` to `prefers-color-scheme` and listens to `matchMedia` for OS-level changes. The resolved theme is applied as `document.documentElement.dataset.theme`, which `[data-theme="dark"]` overrides in CSS.
+
+The user's accent color (a tweak too) is preserved across themes; only the `--accent-soft` alpha is adjusted (0.10/0.18 in light, 0.18/0.30 in dark) so soft tints stay visible on a dark canvas. Modal/drawer backdrops use `--backdrop` / `--backdrop-soft` vars that bump alpha in dark mode.
+
+Toggle UI lives in the sidebar UserMenu (auto / light / dark segmented control). The Tweaks panel also exposes the same control for development.
+
+### Drag interactions
+
+**Gantt bar drag** (gantt.jsx): bar body = move (shifts start+end equally, duration unchanged); 6px-wide invisible edge handles = resize-l (changes start) / resize-r (changes end). Both recompute via the project's working-day calendar. 1-day snap. Phase bars are not draggable (their dates derive from children); milestones can move but not resize.
+
+**Table row reorder** (table.jsx): the rownum cell is the drag handle (cursor flips to grab on hover, number swaps to grip glyph). Drop position is found by hit-testing rownum cells via `document.querySelectorAll(".pw-table-grid .pw-tg-cell--rownum:not(.pw-tg-cell--head):not(.pw-tg-cell--append)")`. Phases move as a contiguous block (phase + its subsequent leaves until the next phase). Leaves auto re-parent to whichever phase ends up immediately above the drop point.
+
+Both drags use `setPointerCapture` + `body` class flip (`pw-dragging-move` / `pw-dragging-resize` / `pw-dragging-row`) to pin the global cursor. Click vs drag is disambiguated by a 3px movement threshold.
+
+### Brand assets and fonts
+
+Brand SVGs in `mock/yuipath-*.svg` (originals) and `mock/project/assets/` (dev-server-served copies):
+- `yuipath-smile-static.svg` / `yuipath-smile-animated.svg` — the smile mark, rendered via `<YuiPathMark size={N} animated={bool} />` using `<img src>`. Pure shapes, no font deps; the animated version's `<style>` block runs inside `<img>`-loaded SVGs.
+- `yuipath-logotype.svg` — the "YuiPath" wordmark. **Inlined** as JSX in `<YuiPathWordmark height={N} />` (not via `<img>`) because `<img>`-loaded SVGs are sandboxed from external fonts. The viewBox is tightened (`0 22 178 42`) so `height={N}` actually approximates N px of letter height.
+
+The wordmark's "Yui" defaults to `currentColor` so it follows light/dark theme; "Path" stays brand blue (`#3B82F6`).
+
+**Fonts**: GitHub-style system stack (no web fonts loaded). One exception — Nunito 800 is loaded for the wordmark only (~10KB). Body / UI uses `-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", ...` via `--font-sans`.
+
+### Implemented feature inventory (mock spec snapshot)
+
+Useful as the UX checklist for the real implementation:
+
+| Surface | What's there |
+|---|---|
+| Dashboard | Detectors framework (`要注意 (今)` + `リスクのある先`), phase progress, activity feed, health bar |
+| Table | Excel-like edit (Tab/Enter/arrow keyboard nav), indent/outdent, insert/duplicate/delete, right-click context menu, **row drag-reorder**, CSV import / export |
+| Gantt | Phases, leaf bars with status colors, milestones (diamonds), critical path strong outline, dependency arrows (3-segment Z connectors), today line, zoom (day/week/month/quarter), filters (owner/status/CP), **bar drag for date editing** |
+| Calendar | Month grid (6 weeks), task bars with lane assignment, holiday hilights, working-day shading |
+| Resources | Weekly load histogram, peak/avg, hover-revealed inline delete (self-delete blocked) |
+| Projects list | Multiple projects with switcher, current-project indicator, create/delete (with cascade warnings) |
+| Settings | Calendars (with holidays), Language (display only — JA/EN), About (philosophy / quickstart / license / Star CTA) |
+| Auth flow | Login / Signup / Forgot password (all mock) |
+| Drawers | TaskDrawer (full edit + comments + activity scroll-to), ResourceDrawer, ProjectDrawer |
+| System | ConfirmDialog with cascade-impact text on every destructive action, dark mode (auto/light/dark), accent color picker, density picker, sidebar collapse |
+
+### Known limitations (intentional or punted)
+
+- No live tooltip during drag operations (preview of new dates / new parent)
+- No inter-task constraint validation (you can drag a successor before its predecessor's end)
+- No multi-select / bulk-edit
+- No keyboard-shortcut help modal (⌘?)
+- No file attachments on tasks/comments
+- No member management beyond resources (invitations, roles, permissions — Pattern B concern)
+- Notifications panel is derived from comments + ACTIVITY (no real notification store)
+- Mobile / responsive layout is not designed (PC-first business tool)
 
 ## Conventions to know
 
