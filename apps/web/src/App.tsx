@@ -1,27 +1,27 @@
+import { Layout, type ViewKey } from "@/components/Layout";
+import { ProjectsView } from "@/views/ProjectsView";
+import { SettingsView } from "@/views/SettingsView";
+import { TasksView } from "@/views/TasksView";
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
-
-interface HealthStatus {
-  status: string;
-}
+import { useState } from "react";
+import "@/theme/styles.css";
 
 export function App() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/healthz")
-      .then((r) => r.json() as Promise<HealthStatus>)
-      .then(setHealth)
-      .catch((e: Error) => setError(e.message));
-  }, []);
+  const [view, setView] = useState<ViewKey>("projects");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-      <h1>YuiPath</h1>
-      <p>Web only / Python FastAPI / AWS managed (skeleton)</p>
-      {error && <p style={{ color: "red" }}>API error: {error}</p>}
-      {health && <p>API health: {health.status}</p>}
-    </main>
+    <Layout view={view} onViewChange={setView}>
+      {view === "projects" && (
+        <ProjectsView
+          onSelect={(id) => {
+            setSelectedProjectId(id);
+            setView("tasks");
+          }}
+        />
+      )}
+      {view === "tasks" && <TasksView projectId={selectedProjectId} />}
+      {view === "settings" && <SettingsView />}
+    </Layout>
   );
 }

@@ -1,0 +1,153 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Phase 2 baseline. mock の `pw-` prefix を順次移植する想定。
+   今は最小の light/dark トークンと layout だけ。 */
+
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-soft: #f5f5f0;
+  --border: #e5e3dc;
+  --text: #1f2024;
+  --text-soft: #67696e;
+  --accent: #3b82f6;
+  --danger: #ef4444;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --radius: 6px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI",
+    "Meiryo", sans-serif;
+}
+
+[data-theme="dark"] {
+  --bg: #16181d;
+  --surface: #1d2026;
+  --surface-soft: #23272e;
+  --border: #2c3038;
+  --text: #e7e9ee;
+  --text-soft: #989da7;
+  --accent: #60a5fa;
+  --danger: #f87171;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--accent);
+}
+
+.pw-app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.pw-sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pw-sidebar h1 {
+  font-size: 18px;
+  margin: 0 4px 8px;
+}
+
+.pw-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pw-sidebar nav button {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.pw-sidebar nav button:hover {
+  background: var(--surface-soft);
+}
+
+.pw-sidebar nav button.is-active {
+  background: var(--surface-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pw-main {
+  padding: 24px 32px;
+  overflow: auto;
+}
+
+.pw-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.pw-button {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+
+.pw-button.is-secondary {
+  background: var(--surface-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.pw-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  color: var(--text);
+}
+
+.pw-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pw-table th,
+.pw-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pw-error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
