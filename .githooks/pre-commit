@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# YuiPath pre-commit hook: detect AWS resource IDs / secrets in staged changes.
+# Enable with: git config core.hooksPath .githooks
+
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+if [[ -z "$staged" ]]; then
+  exit 0
+fi
+
+# Build a single grep -nE pattern. Each regex matches a known AWS-ish ID shape.
+# Keep these tight; false positives erode trust in the hook.
+patterns=(
+  # 12-digit AWS account ID (only flag when surrounded by AWS-ish keywords)
+  'aws[_-]?account[_-]?id[^0-9]*[0-9]{12}'
+  'arn:aws:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:'
+  # Cognito User Pool ID
+  '\b[a-z]{2}-[a-z]+-[0-9]_[A-Za-z0-9]{9}\b'
+  # API Gateway endpoint
+  '[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com'
+  # CloudFront domain
+  '[a-z0-9]{13,14}\.cloudfront\.net'
+  # AWS access key
+  '\bAKIA[0-9A-Z]{16}\b'
+  '\bASIA[0-9A-Z]{16}\b'
+  # Generic "secret" assignments with a value
+  '(api[_-]?key|secret[_-]?key|access[_-]?key)\s*[:=]\s*["'\'']?[A-Za-z0-9/+_-]{20,}'
+)
+
+joined=$(IFS='|'; echo "${patterns[*]}")
+
+hits=$(echo "$staged" | xargs -r grep -nIE "$joined" 2>/dev/null || true)
+
+if [[ -n "$hits" ]]; then
+  echo "==========================================================="
+  echo "  YuiPath pre-commit: possible AWS resource ID / secret found"
+  echo "==========================================================="
+  echo "$hits"
+  echo
+  echo "If this is a false positive, run with --no-verify ONLY after"
+  echo "confirming no real secret is being committed."
+  exit 1
+fi
+
+exit 0
