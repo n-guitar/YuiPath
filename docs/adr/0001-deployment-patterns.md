@@ -1,6 +1,11 @@
+> [!WARNING]
+> **SUPERSEDED by [ADR-0013](./0013-architecture-reset.md)** (2026-05-09)
+>
+> 本 ADR は Pattern A (Tauri デスクトップ) + Rust crate 前提に依存していたため、ADR-0013 によるアーキテクチャリセット (Web only / Python FastAPI / AWS managed) で置き換えられた。設計議論の履歴として保存。
+
 # 0001: Deployment patterns (Tauri ローカル + AWS クラウド)
 
-- Status: Accepted
+- Status: Superseded by ADR-0013
 - Date: 2026-05-08
 
 ## Context
@@ -63,7 +68,7 @@ ProjectLibre は Java デスクトップ + 独自 Cloud SaaS の2系統。我々
 
 ### Tauri エコシステム成熟度
 - Tauri 2.0 は GA だが、プラグインや配布ツールは Electron ほど枯れていない
-- **トリガー**: 重大なリリース blocker に当たった場合、Wails (Go) や Electron へ撤退も視野
+- **トリガー**: 重大なリリース blocker に当たった場合、Wails (Go) や Electron への撤退も視野に
 - 現状リスク: 中
 
 ### ファイル互換は CSV のみに絞る

@@ -1,0 +1,38 @@
+# Node
+node_modules/
+.pnpm-store/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# CDK
+infra/cdk/cdk.out/
+infra/cdk/outputs.json
+
+# DynamoDB Local data
+.dynamodb/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/

@@ -1,0 +1,39 @@
+name: infra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/cdk/**"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "infra/cdk/**"
+      - ".github/workflows/infra.yml"
+
+jobs:
+  synth:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/cdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install
+        working-directory: .
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: CDK synth
+        run: pnpm synth

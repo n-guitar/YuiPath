@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.7
+# Lambda image for the FastAPI app. CDK builds this via DockerImageCode.
+# Use AWS public Python base; mangum bridges the Lambda event to ASGI.
+
+FROM public.ecr.aws/lambda/python:3.11
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Install deps
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir \
+    "fastapi>=0.115.0" \
+    "pydantic[email]>=2.9.0" \
+    "pydantic-settings>=2.6.0" \
+    "boto3>=1.35.0" \
+    "mangum>=0.19.0"
+
+# App source (we don't install via pip in Lambda; we just copy and let the
+# handler import yuipath_api directly).
+COPY src/yuipath_api ${LAMBDA_TASK_ROOT}/yuipath_api
+
+CMD ["yuipath_api.lambda_handler.handler"]

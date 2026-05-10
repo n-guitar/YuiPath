@@ -1,0 +1,46 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "biome.json"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "biome.json"
+      - ".github/workflows/web.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install
+
+      - name: Lint (biome)
+        run: pnpm exec biome check apps/web/src packages
+
+      - name: Type check
+        run: pnpm -r --filter "@yuipath/web" --filter "@yuipath/api-client" typecheck
+
+      - name: Test
+        run: pnpm -r --filter "@yuipath/web" test
