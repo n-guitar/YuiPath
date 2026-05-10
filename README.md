@@ -4,67 +4,80 @@
 
 YuiPath は MS Project / ProjectLibre の代替を目指す Apache 2.0 ライセンスの OSS プロジェクト管理ツールです。タスク・スケジュール・依存関係・進捗の管理に必要な核となる機能だけを提供し、複雑な追加機能は意図的に抑えています。
 
-## ステータス
+## アーキテクチャ要約 ([ADR-0013](docs/adr/0013-architecture-reset.md))
 
-**Mock phase 完了 → 設計・実装 phase 着手中**（2026-05-09 時点）
+- **Web only** — Tauri デスクトップは採用しない (`docker-compose up` でローカル開発、AWS で本番)
+- **Backend: Python FastAPI** (Lambda + ローカル uvicorn を env で切替)
+- **Storage: DynamoDB** (DynamoDB Local / AWS の endpoint 切替)
+- **Auth: AWS マネージド** — Browser は Cognito JWT Authorizer / MCP は AgentCore Gateway
+- **OpenAPI が source of truth** — FastAPI 自動生成、TS client / MCP tools 自動派生
+- **AI は外付け** — 本体に AI UI は持たない、Claude Desktop 等の MCP client から AgentCore Gateway 経由でアクセス
 
-このリポジトリの現在の構成：
+## クイックスタート
 
-| パス | 内容 |
-|---|---|
-| [`mock/`](mock/) | HTML / CSS / JSX で書かれた製品 UI モック。製品 UX 仕様として機能するスナップショット |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records（配布形態 / データ層 / AI 統合 / ライセンス） |
-| [`CLAUDE.md`](CLAUDE.md) | リポジトリのアーキテクチャ・規約ガイド |
+```bash
+git clone https://github.com/n-guitar/yuipath.git
+cd yuipath
+git config core.hooksPath .githooks
+docker-compose up
+# → http://localhost:5173 (web), http://localhost:8000 (api)
+```
 
-実装は別構成で開始予定（[ADR-0001](docs/adr/0001-deployment-patterns.md)）：
+詳細は [docs/dev-guide.md](docs/dev-guide.md) 参照。
 
-- **Pattern A** — Tauri 2.0 + React/TS + Rust→WASM PM コア（ローカル動作）
-- **Pattern B** — AWS（CloudFront + Lambda + DynamoDB On-Demand）（クラウド動作）
-- 両者で 95% 以上のコードを共有
+## リポジトリ構成
+
+```
+yuipath/
+├── apps/
+│   ├── web/                # React + Vite SPA (Phase 2 で mock 移植)
+│   └── api/                # Python FastAPI app (Phase 1)
+├── packages/
+│   └── api-client/         # openapi-typescript で自動生成 (Phase 1 完了後)
+├── infra/
+│   └── cdk/                # AWS CDK (Phase 3)
+├── docker-compose.yml
+├── docs/
+│   ├── adr/                # Architecture Decision Records
+│   └── dev-guide.md
+└── mock/                   # UX spec として保持 (実装中も削除しない)
+```
 
 ## 設計思想
 
 1. **シンプルに、本質だけ。** タスク・期間・進捗・依存関係。PM の核を扱い、機能の網羅性は追わない
 2. **正直な数字だけ出す。** EVM / SPI / CPI などデータが揃わないと嘘になる指標は表示しない
 3. **読める / 軽い UI。** Notion ライクな柔らかい配色、システムフォント、ノイズの少ない密度
-4. **ローカルファースト。** 個人利用は Tauri デスクトップ（オフライン・データは手元）。チームは AWS で同期
-5. **AI は外付け。** コア製品は AI 依存ゼロ。必要なら MCP 経由で外部 AI と連携（[ADR-0003](docs/adr/0003-ai-via-external-mcp.md)）
+4. **マネージドに乗る。** 自前で JWT 検証 / MCP サーバーを書かない、AWS に委譲して書く量を減らす
+5. **AI は外付け。** コア製品に AI UI なし。MCP 経由で外部 LLM クライアント (BYOC = Bring Your Own Claude)
 
 ## モックを動かす
 
 ```bash
 cd mock/project
 python3 -m http.server 8731
-# http://localhost:8731/YuiPath.html を開く
+# http://localhost:8731/YuiPath.html
 ```
 
-ビルド工程はありません。`babel-standalone` がブラウザで JSX を変換します。詳細な構造は [`mock/README.md`](mock/README.md) と [`CLAUDE.md`](CLAUDE.md) を参照。
+`mock/` は **UX spec として凍結**。実装中も削除・改変しない。
 
-## モックでカバー済みの機能
+## ステータス
 
-- **ダッシュボード** — 「要注意（今）」「リスクのある先（先行マイルストーン）」の自動検出
-- **テーブル** — Excel ライク編集、インデント / アウトデント、行ドラッグ並び替え、CSV インポート / エクスポート
-- **ガントチャート** — バードラッグで日付編集、フェーズ折り畳み、クリティカルパス強調、フィルタ、依存矢印
-- **カレンダー** — 月ビュー、祝日・営業日表示
-- **リソース** — 稼働率ヒートマップ、アサイン解除連動の削除
-- **設定** — カレンダー / 言語 / About
-- **認証フロー** — ログイン、サインアップ、パスワード再設定、ログアウト
-- **ダークモード** — auto / light / dark（OS 設定追従）
-
-詳細な機能棚卸しと既知の制限は [`CLAUDE.md`](CLAUDE.md) を参照。
+- ✅ Mock phase 完了 (`mock/`)
+- ✅ ADR / 設計確定 (ADR-0013、Phase 0–4 issue 起票済み)
+- 🔄 Phase 0–4 実装中 (Issue #10〜#15)
 
 ## 関連ドキュメント
 
 | | |
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | リポジトリ全体のアーキテクチャ・規約・サブシステム解説 |
-| [`mock/README.md`](mock/README.md) | モックの構造、起動、実装メモ |
-| [`mock/chats/issue.md`](mock/chats/issue.md) | 製品の初期構想・市場調査・技術検討（長文） |
-| [`mock/chats/chat1.md`](mock/chats/chat1.md) | モック iteration の設計対話ログ |
-| [`docs/adr/`](docs/adr/) | 設計判断の記録 |
+| [`docs/adr/`](docs/adr/) | 設計判断の記録 (ADR-0013 が現行アーキテクチャ) |
+| [`docs/dev-guide.md`](docs/dev-guide.md) | 開発環境セットアップとコマンドリファレンス |
+| [`mock/README.md`](mock/README.md) | モックの構造、起動、実装メモ (UX spec) |
 
 ## ライセンスと商標
 
-- **ソースコード**: [Apache License 2.0](docs/adr/0004-license-apache-2-with-trademark.md)（`LICENSE` / `NOTICE` ファイル本体は実装 phase で配置予定）
-- **ブランド**: "YuiPath" の名前およびロゴは n-guitar の商標として保護。利用ポリシーは [ADR-0004](docs/adr/0004-license-apache-2-with-trademark.md) 参照（`TRADEMARKS.md` 本体は実装 phase で配置予定）
-- Copyright © 2026 n-guitar
+- **ソースコード**: [Apache License 2.0](LICENSE)
+- **ブランド**: "YuiPath" の名前およびロゴは商標として保護。利用ポリシーは [TRADEMARKS.md](TRADEMARKS.md) 参照
+- Copyright © 2026 YuiPath contributors
