@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # Auth
     auth_mode: Literal["dev", "cognito"] = "dev"
     dev_user_id: str = "local-user"
-    dev_user_email: str = "dev@yuipath.local"
+    dev_user_email: str = "dev@yuipath.example"
     dev_user_is_admin: bool = True
 
     # DynamoDB

@@ -22,7 +22,11 @@ select = [
   "SIM",              # simplify
   "RUF",              # ruff-specific
 ]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+  "E501",  # line length handled by formatter
+  "B008",  # FastAPI Depends/Path/Query in defaults is the idiomatic style
+  "N818",  # don't require Error suffix on exception names
+]
 
 [tool.ruff.format]
 quote-style = "double"
